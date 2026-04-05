@@ -1,0 +1,90 @@
+use alloy_primitives::Address;
+use anyhow::{Context, Result};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Config {
+    pub gateway: GatewayConfig,
+    pub tap: TapConfig,
+    pub qos: QosConfig,
+    pub providers: Vec<ProviderConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct GatewayConfig {
+    #[serde(default = "default_host")]
+    pub host: String,
+    #[serde(default = "default_port")]
+    pub port: u16,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TapConfig {
+    /// Gateway operator private key (hex) — signs TAP receipts sent to providers.
+    pub signer_private_key: String,
+    /// RPCDataService contract address.
+    pub data_service_address: Address,
+    /// GRT wei charged per compute unit. Default ≈ $40/M requests at $0.09 GRT.
+    #[serde(default = "default_base_price_per_cu")]
+    pub base_price_per_cu: u128,
+    /// EIP-712 domain name for GraphTallyCollector.
+    pub eip712_domain_name: String,
+    /// Chain ID where GraphTallyCollector is deployed (42161 = Arbitrum One).
+    #[serde(default = "default_tap_chain_id")]
+    pub eip712_chain_id: u64,
+    /// GraphTallyCollector contract address.
+    #[serde(default = "default_tap_verifying_contract")]
+    pub eip712_verifying_contract: Address,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct QosConfig {
+    /// How often to probe all providers with synthetic eth_blockNumber requests.
+    #[serde(default = "default_probe_interval_secs")]
+    pub probe_interval_secs: u64,
+    /// Weights must sum to 1.0. Defaults match RFC spec.
+    #[serde(default = "default_latency_weight")]
+    pub latency_weight: f64,
+    #[serde(default = "default_availability_weight")]
+    pub availability_weight: f64,
+    #[serde(default = "default_freshness_weight")]
+    pub freshness_weight: f64,
+    /// Number of providers to dispatch to concurrently (first response wins).
+    #[serde(default = "default_concurrent_k")]
+    pub concurrent_k: usize,
+}
+
+/// Static provider configuration (Phase 1).
+/// Phase 2: replace with dynamic discovery from the RPC network subgraph.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ProviderConfig {
+    /// Indexer's on-chain address (used as `service_provider` in TAP receipts).
+    pub address: Address,
+    /// Base URL of the indexer's drpc-service endpoint, e.g. "https://rpc.example.com".
+    pub endpoint: String,
+    /// Chain IDs this provider is registered to serve.
+    pub chains: Vec<u64>,
+}
+
+impl Config {
+    pub fn load() -> Result<Self> {
+        let path = std::env::var("DRPC_GATEWAY_CONFIG")
+            .unwrap_or_else(|_| "gateway.toml".to_string());
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read gateway config from {path}"))?;
+        toml::from_str(&contents).context("failed to parse gateway config")
+    }
+}
+
+fn default_host() -> String { "0.0.0.0".to_string() }
+fn default_port() -> u16 { 8080 }
+fn default_base_price_per_cu() -> u128 { 4_000_000_000_000 } // 4e-6 GRT per CU
+fn default_tap_chain_id() -> u64 { 42161 }
+fn default_tap_verifying_contract() -> Address {
+    "0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e".parse().unwrap()
+}
+fn default_probe_interval_secs() -> u64 { 10 }
+fn default_latency_weight() -> f64 { 0.30 }
+fn default_availability_weight() -> f64 { 0.30 }
+fn default_freshness_weight() -> f64 { 0.25 }
+fn default_concurrent_k() -> usize { 3 }

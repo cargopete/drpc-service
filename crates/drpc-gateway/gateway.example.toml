@@ -1,0 +1,39 @@
+[gateway]
+host = "0.0.0.0"
+port = 8080
+
+[tap]
+# Gateway operator private key — signs TAP receipts sent to indexers.
+# This is NOT a fund-controlling key; it is an authorised signer added to
+# PaymentsEscrow by the gateway operator account.
+signer_private_key = "0xYOUR_SIGNER_PRIVATE_KEY"
+
+# RPCDataService contract address (set after deployment)
+data_service_address = "0x0000000000000000000000000000000000000000"
+
+# GRT wei charged per compute unit.
+# Default ≈ 4e-6 GRT/CU → $40/M requests at $0.09/GRT, ~10 CU/request average.
+base_price_per_cu = 4_000_000_000_000
+
+eip712_domain_name = "TAP"
+eip712_chain_id = 42161
+eip712_verifying_contract = "0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e"
+
+[qos]
+probe_interval_secs = 10
+latency_weight      = 0.30
+availability_weight = 0.30
+freshness_weight    = 0.25
+concurrent_k        = 3     # Dispatch to top-3 providers; first response wins
+
+# Static provider list (Phase 1).
+# Phase 2: replace with dynamic discovery from the RPC network subgraph.
+[[providers]]
+address  = "0xYOUR_INDEXER_1_ADDRESS"
+endpoint = "https://rpc1.example.com"
+chains   = [1, 42161, 10, 8453]
+
+[[providers]]
+address  = "0xYOUR_INDEXER_2_ADDRESS"
+endpoint = "https://rpc2.example.com"
+chains   = [1, 42161]

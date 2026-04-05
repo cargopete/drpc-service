@@ -1,0 +1,38 @@
+[server]
+host = "0.0.0.0"
+port = 7700
+
+[indexer]
+service_provider_address = "0xYOUR_INDEXER_ADDRESS"
+# 32-byte operator private key — used only for response attestations, not fund management
+operator_private_key = "0xYOUR_OPERATOR_PRIVATE_KEY"
+
+[tap]
+# RPCDataService contract address — set after deployment (TBD)
+data_service_address = "0x0000000000000000000000000000000000000000"
+
+# Gateways authorised to issue TAP receipts to this indexer
+authorized_senders = [
+    "0xDDE4cfFd3D9052A9cb618fC05a1Cd02be1f2F467",  # Graph gateway (Arbitrum One)
+]
+
+# EIP-712 domain for GraphTallyCollector — must match the deployed contract
+eip712_domain_name = "TAP"
+eip712_chain_id = 42161                                       # Arbitrum One
+eip712_verifying_contract = "0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e"
+
+# Reject receipts older than this (nanoseconds)
+max_receipt_age_ns = 30_000_000_000  # 30 seconds
+
+[database]
+url = "postgres://drpc:drpc@localhost:5432/drpc"
+
+[chains]
+supported = [1, 42161, 10, 8453]
+
+# Map chain_id (string) → backend Ethereum client URL
+[chains.backends]
+"1"     = "http://localhost:8545"   # Ethereum mainnet (Geth/Erigon/Reth)
+"42161" = "http://localhost:8546"   # Arbitrum One
+"10"    = "http://localhost:8547"   # Optimism
+"8453"  = "http://localhost:8548"   # Base
