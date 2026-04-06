@@ -59,6 +59,34 @@ pub fn receipt_struct_hash(r: &Receipt) -> B256 {
 mod tests {
     use super::*;
 
+    /// Cross-language EIP-712 compatibility: Rust hash must equal the Solidity-computed golden value.
+    ///
+    /// Fixed parameters mirror contracts/test/EIP712CrossLanguage.t.sol.
+    /// If this test fails, the Rust and Solidity EIP-712 encoding have diverged.
+    #[test]
+    fn eip712_hash_matches_solidity_golden() {
+        let verifying_contract = Address::from([0x12u8; 20]);
+        let dom = domain_separator("TAP", 31337, verifying_contract);
+
+        let receipt = crate::types::Receipt {
+            data_service:     Address::from([0x01u8; 20]),
+            service_provider: Address::from([0x02u8; 20]),
+            timestamp_ns: 1_000_000_000,
+            nonce: 42,
+            value: 1_000_000_000_000_000_000,
+            metadata: Default::default(),
+        };
+
+        let hash = eip712_hash(dom, &receipt);
+
+        // Golden value verified by contracts/test/EIP712CrossLanguage.t.sol::test_solidity_hash_equals_golden
+        let expected: B256 =
+            "0x6a496be73e1ebc77612afedde0307b2099cc116600e590ce743771770f85d5ba"
+                .parse()
+                .unwrap();
+        assert_eq!(hash, expected);
+    }
+
     fn test_contract() -> Address {
         "0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e".parse().unwrap()
     }
