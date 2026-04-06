@@ -13,15 +13,21 @@ import {RPCDataService} from "../src/RPCDataService.sol";
 ///     --verify \
 ///     -vvvv
 ///
-/// Required env vars:
-///   PRIVATE_KEY           — deployer private key
-///   GRAPH_CONTROLLER      — Graph Protocol Controller address (from GraphDirectory)
+/// Required env vars (see .env.example):
+///   PRIVATE_KEY           — deployer private key (hex, 0x-prefixed)
+///   OWNER                 — governance multisig or deployer address
+///   GRAPH_CONTROLLER      — Graph Protocol Controller address
+///   GRAPH_TALLY_COLLECTOR — GraphTallyCollector contract address
 ///   PAUSE_GUARDIAN        — address authorised to pause the service
 ///
-/// Arbitrum Sepolia addresses (for reference):
-///   HorizonStaking:       0x865365C425f3A593Ffe698D9c4E6707D14d51e08
-///   GraphTallyCollector:  0x382863e7B662027117449bd2c49285582bbBd21B
-///   PaymentsEscrow:       0x1e4dC4f9F95E102635D8F7ED71c5CdbFa20e2d02
+/// Horizon addresses — Arbitrum Sepolia (421614):
+///   Controller:           0x9DB3ee191681f092607035d9BDA6e59FbEaCa695
+///   HorizonStaking:       0xFf2Ee30de92F276018642A59Fb7Be95b3F9088Af
+///   GraphTallyCollector:  0xacC71844EF6beEF70106ABe6E51013189A1f3738
+///   PaymentsEscrow:       0x09B985a2042848A08bA59060EaF0f07c6F5D4d54
+///
+/// Horizon addresses — Arbitrum One (42161):
+///   GraphTallyCollector:  0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e
 contract Deploy is Script {
     /// Phase 1 supported chains and their minimum provisions (in GRT wei).
     struct ChainInit {
