@@ -189,8 +189,7 @@ contract SlashErrorPathTest is Test {
     // Fixed address standing in for "some account being disputed".
     address internal constant DISPUTED_ACCOUNT = address(0xacC0);
 
-    function _emptyProof() internal view returns (IRPCDataService.Tier1FraudProof memory p) {
-        p.challenger = challenger;
+    function _emptyProof() internal pure returns (IRPCDataService.Tier1FraudProof memory p) {
         p.chainId = CHAIN_ID;
         p.account = DISPUTED_ACCOUNT;
         p.blockHash = keccak256("block");

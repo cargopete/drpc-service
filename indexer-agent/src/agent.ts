@@ -1,6 +1,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  defineChain,
   encodeAbiParameters,
   http,
   parseAbiParameters,
@@ -87,8 +88,16 @@ export class IndexerAgent {
     this.config = config;
 
     const account = privateKeyToAccount(config.operatorPrivateKey);
-    const chain = config.arbitrumRpcUrl.toLowerCase().includes("sepolia")
+    const url = config.arbitrumRpcUrl.toLowerCase();
+    const chain = url.includes("sepolia")
       ? arbitrumSepolia
+      : url.includes("127.0.0.1") || url.includes("localhost")
+      ? defineChain({
+          id: 31337,
+          name: "Anvil",
+          nativeCurrency: { decimals: 18, name: "Ether", symbol: "ETH" },
+          rpcUrls: { default: { http: [config.arbitrumRpcUrl] } },
+        })
       : arbitrum;
 
     this.publicClient = createPublicClient({
@@ -120,9 +129,12 @@ export class IndexerAgent {
 
     const shutdown = () => {
       clearInterval(timer);
-      this.gracefulShutdown().catch((err) =>
-        console.error("[agent] shutdown error:", err)
-      );
+      this.gracefulShutdown()
+        .then(() => process.exit(0))
+        .catch((err) => {
+          console.error("[agent] shutdown error:", err);
+          process.exit(1);
+        });
     };
     process.on("SIGTERM", shutdown);
     process.on("SIGINT", shutdown);
@@ -132,7 +144,7 @@ export class IndexerAgent {
   // Reconcile: ensure on-chain state matches config
   // ---------------------------------------------------------------------------
 
-  private async reconcile(): Promise<void> {
+  async reconcile(): Promise<void> {
     const provider = this.config.providerAddress;
 
     // 1. Register if needed.
@@ -195,7 +207,7 @@ export class IndexerAgent {
   // Graceful shutdown: stop all active registrations before exiting
   // ---------------------------------------------------------------------------
 
-  private async gracefulShutdown(): Promise<void> {
+  async gracefulShutdown(): Promise<void> {
     console.log("[agent] shutting down — stopping active registrations");
 
     const onChain = await this.publicClient.readContract({
@@ -216,7 +228,6 @@ export class IndexerAgent {
     }
 
     console.log("[agent] shutdown complete");
-    process.exit(0);
   }
 
   // ---------------------------------------------------------------------------

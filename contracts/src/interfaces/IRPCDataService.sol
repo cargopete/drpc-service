@@ -51,8 +51,12 @@ interface IRPCDataService {
 
     /// @notice Tier 1 fraud proof: EIP-1186 Merkle proof showing a provider's response
     ///         contradicts the canonical on-chain state at a trusted block.
+    ///
+    /// @dev The challenger is `msg.sender` of the `slash()` call — it is NOT included in
+    ///      this struct. This prevents a frontrunning attack where an observer copies a
+    ///      valid proof from the mempool and substitutes their own address to steal the
+    ///      slash bounty.
     struct Tier1FraudProof {
-        address challenger;
         uint64 chainId;
         address account;
         bytes32 blockHash;
@@ -100,6 +104,7 @@ interface IRPCDataService {
     error ThawingPeriodTooShort(uint64 required, uint64 actual);
     error RegistrationNotFound(address provider, uint64 chainId, CapabilityTier tier);
     error InvalidFraudProof(string reason);
+    error InvalidServiceProvider(address expected, address actual);
     error InvalidPaymentType();
     error UntrustedBlockHash(bytes32 blockHash);
     error InsufficientRewardsPool(uint256 available, uint256 required);

@@ -307,10 +307,20 @@ contract RPCDataService is Ownable, DataService, DataServiceFees, DataServicePau
             revert InsufficientProvision(cfg.minProvisionTokens, provision.tokens);
         }
 
-        _providerChains[serviceProvider].push(
-            ChainRegistration({chainId: chainId, tier: CapabilityTier(tier), endpoint: endpoint, active: true})
-        );
+        // Reactivate an existing (stopped) entry if one exists rather than pushing a new
+        // one, so the _providerChains array does not grow without bound across start/stop
+        // cycles and activeRegistrationCount() stays gas-bounded.
+        ChainRegistration[] storage regs = _providerChains[serviceProvider];
+        for (uint256 i = 0; i < regs.length; i++) {
+            if (regs[i].chainId == chainId && uint8(regs[i].tier) == tier) {
+                regs[i].active = true;
+                regs[i].endpoint = endpoint;
+                emit ServiceStarted(serviceProvider, chainId, CapabilityTier(tier), endpoint);
+                return;
+            }
+        }
 
+        regs.push(ChainRegistration({chainId: chainId, tier: CapabilityTier(tier), endpoint: endpoint, active: true}));
         emit ServiceStarted(serviceProvider, chainId, CapabilityTier(tier), endpoint);
     }
 
@@ -361,7 +371,9 @@ contract RPCDataService is Ownable, DataService, DataServiceFees, DataServicePau
         (IGraphTallyCollector.SignedRAV memory signedRav, uint256 tokensToCollect) =
             abi.decode(data, (IGraphTallyCollector.SignedRAV, uint256));
 
-        require(signedRav.rav.serviceProvider == serviceProvider, "RPCDataService: RAV provider mismatch");
+        if (signedRav.rav.serviceProvider != serviceProvider) {
+            revert InvalidServiceProvider(serviceProvider, signedRav.rav.serviceProvider);
+        }
 
         // Release any expired stake claims before locking new ones.
         _releaseStake(serviceProvider, 0);
@@ -442,9 +454,9 @@ contract RPCDataService is Ownable, DataService, DataServiceFees, DataServicePau
         uint256 tokens = provision.tokens < SLASH_AMOUNT ? provision.tokens : SLASH_AMOUNT;
         uint256 tokensVerifier = tokens * CHALLENGER_REWARD_PPM / 1_000_000;
 
-        _graphStaking().slash(serviceProvider, tokens, tokensVerifier, proof.challenger);
+        _graphStaking().slash(serviceProvider, tokens, tokensVerifier, msg.sender);
 
-        emit FraudProofSubmitted(serviceProvider, proof.challenger, tokens);
+        emit FraudProofSubmitted(serviceProvider, msg.sender, tokens);
     }
 
     /// @notice Accept pending changes to this provider's provision parameters.
