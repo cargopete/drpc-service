@@ -1,0 +1,17 @@
+{
+  "arbitrumRpcUrl": "https://arb1.arbitrum.io/rpc",
+  "rpcDataServiceAddress": "0x0000000000000000000000000000000000000000",
+  "operatorPrivateKey": "0x0000000000000000000000000000000000000000000000000000000000000001",
+  "providerAddress": "0x0000000000000000000000000000000000000001",
+  "endpoint": "https://rpc.my-provider.com",
+  "geoHash": "u1hx",
+  "paymentsDestination": "0x0000000000000000000000000000000000000002",
+  "services": [
+    { "chainId": 1, "tier": 0 },
+    { "chainId": 1, "tier": 1 },
+    { "chainId": 42161, "tier": 0 },
+    { "chainId": 10, "tier": 0 },
+    { "chainId": 8453, "tier": 0 }
+  ],
+  "reconcileIntervalSecs": 60
+}
