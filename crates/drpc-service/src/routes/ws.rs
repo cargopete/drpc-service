@@ -19,7 +19,7 @@ use tokio_tungstenite::tungstenite::Message as TungMsg;
 use crate::{error::ServiceError, server::AppState};
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/ws/{chain_id}", get(ws_handler))
+    Router::new().route("/ws/:chain_id", get(ws_handler))
 }
 
 async fn ws_handler(

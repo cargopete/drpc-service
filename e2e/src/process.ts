@@ -1,5 +1,5 @@
-import { ChildProcess, spawn } from "child_process";
-import * as net from "net";
+import { ChildProcess, spawn } from "node:child_process";
+import * as net from "node:net";
 
 export function spawnProcess(
   cmd: string,

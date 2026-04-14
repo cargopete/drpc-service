@@ -36,10 +36,10 @@ pub enum ServiceError {
 impl IntoResponse for ServiceError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
-            ServiceError::MissingReceipt | ServiceError::InvalidReceipt(_) => {
-                (StatusCode::BAD_REQUEST, -32600, self.to_string())
-            }
-            ServiceError::UnauthorizedSender(_) | ServiceError::ReceiptExpired => {
+            ServiceError::MissingReceipt
+            | ServiceError::InvalidReceipt(_)
+            | ServiceError::UnauthorizedSender(_)
+            | ServiceError::ReceiptExpired => {
                 (StatusCode::UNAUTHORIZED, -32001, self.to_string())
             }
             ServiceError::UnsupportedChain(_) => {

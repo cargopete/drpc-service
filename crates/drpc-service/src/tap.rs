@@ -180,7 +180,10 @@ fn recover_signer(hash: B256, sig_hex: &str) -> anyhow::Result<Address> {
     anyhow::ensure!(bytes.len() == 65, "signature must be 65 bytes, got {}", bytes.len());
 
     let v = bytes[64];
-    let rec_id = RecoveryId::from_byte(v % 2)
+    // k256 produces v=0/1; Ethereum tooling (viem, ethers) produces v=27/28.
+    // Normalise to the raw recovery ID (0 or 1) before constructing RecoveryId.
+    let rec_id_byte = if v >= 27 { v - 27 } else { v };
+    let rec_id = RecoveryId::from_byte(rec_id_byte)
         .ok_or_else(|| anyhow::anyhow!("invalid recovery id {v}"))?;
 
     let sig = K256Sig::from_slice(&bytes[..64])?;

@@ -18,7 +18,7 @@ use drpc_tap::create_receipt;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/rpc/{chain_id}", post(rpc_handler))
+        .route("/rpc/:chain_id", post(rpc_handler))
         .route("/rpc", post(rpc_handler_unified))
 }
 

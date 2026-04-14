@@ -2,7 +2,21 @@ use std::collections::HashMap;
 
 use alloy_primitives::Address;
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+
+/// Deserialize a u128 from either a TOML integer (≤ i64::MAX) or a quoted
+/// decimal string. TOML integers are 64-bit signed, so values that fit in u64
+/// can be expressed as plain integers; larger values must be quoted strings.
+fn deserialize_u128<'de, D: Deserializer<'de>>(d: D) -> Result<u128, D::Error> {
+    use serde::de::Error;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum U128Helper { Int(i64), Str(String) }
+    match U128Helper::deserialize(d)? {
+        U128Helper::Int(v) => u128::try_from(v).map_err(D::Error::custom),
+        U128Helper::Str(s) => s.parse::<u128>().map_err(D::Error::custom),
+    }
+}
 
 /// RPC capability tier a provider can serve.
 ///
@@ -51,7 +65,7 @@ pub struct TapConfig {
     /// RPCDataService contract address.
     pub data_service_address: Address,
     /// GRT wei charged per compute unit. Default ≈ $40/M requests at $0.09 GRT.
-    #[serde(default = "default_base_price_per_cu")]
+    #[serde(default = "default_base_price_per_cu", deserialize_with = "deserialize_u128")]
     pub base_price_per_cu: u128,
     /// EIP-712 domain name for GraphTallyCollector.
     pub eip712_domain_name: String,

@@ -1,40 +1,72 @@
-import { execFileSync } from "child_process";
-import * as fs from "fs";
-import * as path from "path";
-import { ChildProcess } from "child_process";
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { ChildProcess } from "node:child_process";
 import { spawnProcess, waitForPort, killProcess } from "./process.js";
 
-const ROOT = path.resolve(import.meta.dirname, "../../../");
+const ROOT = path.resolve(import.meta.dirname, "../../");
 const CONTRACTS = path.join(ROOT, "contracts");
 const TMP = path.join(ROOT, "e2e/tmp");
+
+// Resolve tool paths by well-known locations rather than relying on PATH,
+// since vitest workers don't source shell rc files.
+const HOME = os.homedir();
+const FORGE = path.join(HOME, ".foundry", "bin", "forge");
+const ANVIL = path.join(HOME, ".foundry", "bin", "anvil");
+const CARGO = path.join(HOME, ".cargo", "bin", "cargo");
+const ENV: NodeJS.ProcessEnv = { ...process.env };
 
 let anvil: ChildProcess;
 let service: ChildProcess;
 let gateway: ChildProcess;
 
+/** Run a command to completion, streaming output, resolving on exit 0. */
+function run(
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, {
+      cwd: opts.cwd,
+      env: opts.env ?? ENV,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    proc.stdout?.on("data", (d: Buffer) => process.stdout.write(`[${path.basename(cmd)}] ${d}`));
+    proc.stderr?.on("data", (d: Buffer) => process.stderr.write(`[${path.basename(cmd)}] ${d}`));
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${cmd} exited with code ${code}`));
+    });
+  });
+}
+
 export async function setup() {
   fs.mkdirSync(TMP, { recursive: true });
 
+
   // 1. Start Anvil
   anvil = spawnProcess(
-    "anvil",
+    ANVIL,
     ["--port", "8545", "--chain-id", "31337", "--accounts", "5"],
-    { cwd: ROOT }
+    { cwd: ROOT, env: ENV }
   );
   await waitForPort(8545);
 
   // 2. Run Foundry setup script
-  execFileSync(
-    "forge",
+  await run(
+    FORGE,
     [
       "script",
-      "script/SetupE2E.s.sol",
+      "script/SetupE2E.s.sol:SetupE2E",
       "--rpc-url",
       "http://127.0.0.1:8545",
       "--broadcast",
       "--skip-simulation",
     ],
-    { cwd: CONTRACTS, stdio: "inherit" }
+    { cwd: CONTRACTS }
   );
 
   // 3. Read fixture
@@ -96,7 +128,7 @@ capabilities = ["standard"]
   fs.writeFileSync(path.join(TMP, "gateway.toml"), gatewayCfg.trim());
 
   // 5. Build Rust binaries
-  execFileSync("cargo", ["build", "--bins"], { cwd: ROOT, stdio: "inherit" });
+  await run(CARGO, ["build", "--bins"], { cwd: ROOT });
 
   // 6. Start drpc-service
   service = spawnProcess(
@@ -105,6 +137,7 @@ capabilities = ["standard"]
     {
       cwd: ROOT,
       env: {
+        ...ENV,
         DRPC_CONFIG: path.join(TMP, "service.toml"),
         RUST_LOG: "info",
       },
@@ -119,6 +152,7 @@ capabilities = ["standard"]
     {
       cwd: ROOT,
       env: {
+        ...ENV,
         DRPC_GATEWAY_CONFIG: path.join(TMP, "gateway.toml"),
         RUST_LOG: "info",
       },

@@ -7,7 +7,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/version", get(version))
-        .route("/providers/{chain_id}", get(providers_for_chain))
+        .route("/providers/:chain_id", get(providers_for_chain))
 }
 
 async fn health() -> Json<Value> {

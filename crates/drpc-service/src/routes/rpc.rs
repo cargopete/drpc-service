@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/rpc/{chain_id}", post(rpc_handler))
+    Router::new().route("/rpc/:chain_id", post(rpc_handler))
 }
 
 async fn rpc_handler(
