@@ -1,5 +1,5 @@
 {
-  "name": "/indexer-agent",
+  "name": "@dispatch/indexer-agent",
   "version": "0.1.0",
   "description": "Lifecycle automation for Dispatch indexers — manages startService/stopService on RPCDataService",
   "type": "module",
