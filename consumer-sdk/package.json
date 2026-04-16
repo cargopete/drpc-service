@@ -1,5 +1,5 @@
 {
-  "name": "@dispatch/consumer-sdk",
+  "name": "@lodestar-dispatch/consumer-sdk",
   "version": "0.1.0",
   "description": "Consumer SDK for the Dispatch decentralised JSON-RPC network",
   "type": "module",
