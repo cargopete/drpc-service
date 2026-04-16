@@ -162,7 +162,8 @@ pub async fn upsert_rav(pool: &Pool, rav: RavRow<'_>) -> anyhow::Result<()> {
             timestamp_ns    = EXCLUDED.timestamp_ns,
             value_aggregate = EXCLUDED.value_aggregate,
             signature       = EXCLUDED.signature,
-            last_updated    = EXCLUDED.last_updated
+            last_updated    = EXCLUDED.last_updated,
+            redeemed        = false
         "#,
     )
     .bind(rav.collection_id)

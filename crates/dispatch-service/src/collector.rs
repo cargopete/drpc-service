@@ -124,7 +124,14 @@ async fn run_once(cfg: &CollectorConfig, config: &Config, pool: &Pool) -> Result
         };
 
         // PaymentTypes.QueryFee = 0
-        let call = contract.collect(service_provider, 0u8, data);
+        let call = contract.collect(service_provider, 0u8, data.clone());
+
+        tracing::debug!(
+            collection_id = %rav.collection_id,
+            data_hex = %hex::encode(&data),
+            value,
+            "sending collect() tx"
+        );
 
         match timeout(Duration::from_secs(120), async {
             call.send()
@@ -182,6 +189,9 @@ fn encode_collect_data(
     };
 
     // abi.encode(SignedRAV, uint256 tokensToCollect) — 0 = collect full amount
-    let encoded = (signed_rav, U256::ZERO).abi_encode();
+    // Use abi_encode_sequence so the tuple is encoded as two top-level ABI params
+    // (matching Solidity's abi.encode(a, b)), not as a single wrapped dynamic tuple
+    // (which abi_encode() would produce, causing abi.decode to revert with empty data).
+    let encoded = (signed_rav, U256::ZERO).abi_encode_sequence();
     Ok(Bytes::from(encoded))
 }
