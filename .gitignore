@@ -7,3 +7,4 @@ agent.config.json
 *.key
 *.env
 .env
+docs/book

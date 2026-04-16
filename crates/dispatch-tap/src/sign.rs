@@ -50,7 +50,7 @@ pub fn create_receipt(
 
     let mut sig_bytes = [0u8; 65];
     sig_bytes[..64].copy_from_slice(&sig.to_bytes());
-    sig_bytes[64] = rec_id.to_byte();
+    sig_bytes[64] = rec_id.to_byte() + 27;
 
     Ok(SignedReceipt {
         receipt,

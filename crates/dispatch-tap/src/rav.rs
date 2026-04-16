@@ -70,7 +70,7 @@ pub fn sign_rav(signing_key: &SigningKey, domain_sep: B256, rav: Rav) -> Result<
     let (sig, rec_id) = signing_key.sign_prehash_recoverable(hash.as_slice())?;
     let mut sig_bytes = [0u8; 65];
     sig_bytes[..64].copy_from_slice(&sig.to_bytes());
-    sig_bytes[64] = rec_id.to_byte();
+    sig_bytes[64] = rec_id.to_byte() + 27;
     Ok(SignedRav {
         rav,
         signature: format!("0x{}", hex::encode(sig_bytes)),

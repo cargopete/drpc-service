@@ -1,0 +1,15 @@
+[book]
+title = "Dispatch"
+description = "Experimental decentralised JSON-RPC data service on The Graph Horizon"
+authors = ["cargopete"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/cargopete/dispatch"
+edit-url-template = "https://github.com/cargopete/dispatch/edit/main/docs/src/{path}"
+site-url = "/dispatch/"
+
+[output.html.fold]
+enable = true
+level = 1
