@@ -64,8 +64,8 @@ Consumer (dApp)
    │  POST /rpc/{chain_id}  (or X-Chain-Id header on /rpc)
    │  TAP-Receipt: { signed EIP-712 receipt }
    ▼
-dispatch-service          ← JSON-RPC proxy, TAP receipt validation, response attestation,
-   │                    receipt persistence (PostgreSQL → RAV aggregation → collect())
+dispatch-service          ← JSON-RPC proxy, TAP receipt validation,
+   │                         receipt persistence (PostgreSQL → RAV aggregation → collect())
    ▼
 Ethereum client       ← Geth / Erigon / Reth / Nethermind
 (full or archive)
@@ -127,7 +127,6 @@ Runs on the indexer alongside an Ethereum full/archive node.
 Key responsibilities:
 - Validate incoming TAP receipts (EIP-712 signature recovery, sender authorisation, staleness check)
 - Forward JSON-RPC requests to the backend Ethereum client
-- Sign responses with an attestation hash (`keccak256(chainId || method || params || response || blockHash)`)
 - Persist receipts to PostgreSQL; background task aggregates into RAVs every 60s and calls `collect()` hourly
 - WebSocket proxy for `eth_subscribe` / `eth_unsubscribe`
 
@@ -159,7 +158,6 @@ Key features:
 - `signReceipt` / `buildReceipt` — EIP-712 TAP v2 receipt construction and signing
 - `discoverProviders` — subgraph GraphQL query returning active providers for a given chain and tier
 - `selectProvider` — weighted random selection proportional to QoS score
-- `computeAttestationHash` / `recoverAttestationSigner` — verify provider response attestations
 
 Install: `npm install /consumer-sdk`
 
@@ -180,9 +178,8 @@ Key functions:
 - `setPaymentsDestination` — decouple the GRT payment recipient from the operator signing key
 - `startService` — activates provider for a `(chainId, capabilityTier)` pair
 - `stopService` / `deregister` — lifecycle management
-- `collect` — enforces `QueryFee` payment type; routes through `GraphTallyCollector`, locks `fees × 5` in stake claims; accrues issuance rewards if pool is funded
-- `claimRewards` — transfer accrued GRT issuance rewards to the caller
-- `proposeChain` / `approveProposedChain` / `rejectProposedChain` — permissionless chain registration with 100k GRT bond
+- `collect` — enforces `QueryFee` payment type; routes through `GraphTallyCollector`, locks `fees × 5` in stake claims
+- `addChain` / `removeChain` — owner-only chain allowlist management
 - `setMinThawingPeriod` — governance-adjustable thawing period (≥ 14 days)
 
 Reference implementations: [`SubgraphService`](https://github.com/graphprotocol/contracts/tree/main/packages/subgraph-service) (live on Arbitrum One) and [`substreams-data-service`](https://github.com/graphprotocol/substreams-data-service) (pre-launch).
@@ -226,10 +223,9 @@ Subgraph: `https://api.studio.thegraph.com/query/1747796/rpc-network/v0.1.1`
 
 ### Smoke test a live provider
 
-Fires real TAP-signed JSON-RPC requests directly at a provider, validates responses, and confirms attestation headers are present.
+Fires real TAP-signed JSON-RPC requests directly at a provider and validates responses.
 
 ```bash
-# Full validated run against the live provider
 DISPATCH_ENDPOINT=http://167.235.29.213:7700 \
 DISPATCH_SIGNER_KEY=<gateway-signer-key> \
 DISPATCH_PROVIDER_ADDRESS=0xb43B2CCCceadA5292732a8C58ae134AdEFcE09Bb \
@@ -255,8 +251,7 @@ npm start
 ```bash
 cp docker/gateway.example.toml docker/gateway.toml
 cp docker/config.example.toml  docker/config.toml
-cp docker/oracle.example.toml  docker/oracle.toml
-# Fill in private keys, provider addresses, backend URLs, and L1 RPC URL.
+# Fill in private keys, provider addresses, and backend URLs.
 docker compose -f docker/docker-compose.yml up
 ```
 
@@ -283,14 +278,6 @@ cp docker/gateway.example.toml gateway.toml
 RUST_LOG=info cargo run --bin dispatch-gateway
 ```
 
-### Run the oracle
-
-```bash
-cp docker/oracle.example.toml oracle.toml
-# fill in: L1 RPC URL, Arbitrum RPC URL, owner private key, data_service_address
-RUST_LOG=info cargo run --bin dispatch-oracle
-```
-
 ### Deploy the contract
 
 ```bash
@@ -299,7 +286,7 @@ forge build
 forge test -vvv
 
 cp .env.example .env
-# fill in PRIVATE_KEY, OWNER, PAUSE_GUARDIAN, GRT_TOKEN, GRAPH_CONTROLLER, GRAPH_TALLY_COLLECTOR
+# fill in PRIVATE_KEY, OWNER, PAUSE_GUARDIAN, GRAPH_CONTROLLER, GRAPH_TALLY_COLLECTOR
 forge script script/Deploy.s.sol --rpc-url arbitrum_one --broadcast --verify -vvvv
 ```
 
@@ -363,7 +350,7 @@ port = 7700
 
 [indexer]
 service_provider_address = "0x..."
-operator_private_key      = "0x..."   # signs response attestations only
+operator_private_key      = "0x..."   # signs on-chain collect() transactions
 
 [tap]
 data_service_address      = "0x73846272813065c3e4efdb3fb82e0d128c8c2364"
@@ -418,34 +405,16 @@ region       = "eu-west"
 capabilities = ["standard"]   # or ["standard", "archive", "debug"]
 ```
 
-### `oracle.toml` (dispatch-oracle)
-
-```toml
-[oracle]
-poll_interval_secs = 12    # one Ethereum block
-tx_timeout_secs    = 120
-
-[l1]
-rpc_url = "https://eth-mainnet.example.com/YOUR_KEY"
-
-[arbitrum]
-rpc_url              = "https://arb1.arbitrum.io/rpc"
-signer_private_key   = "0x..."   # must be RPCDataService owner
-data_service_address = "0x73846272813065c3e4efdb3fb82e0d128c8c2364"
-```
-
 ---
 
 ## Roadmap
 
 | Phase | Status | Scope |
 |---|---|---|
-| 1 — MVP | ✅ Complete | Core contract, indexer service, gateway, TAP payments, attestation, subgraph, CI |
-| 2 — Foundation | ✅ Complete | Quorum consensus, CU-weighted pricing, 10+ chains, geographic routing, capability tiers, metrics, rate limiting, WebSocket, batch RPC, dynamic discovery |
-| 3 — Full parity | ✅ Complete | Tier 1 fraud proof slashing, block header oracle, WebSocket subscriptions, archive/debug tier routing |
-| 4 — Production readiness | ✅ Complete | Unified endpoint, permissionless chain registration, GRT issuance groundwork, indexer agent, subgraph v2 |
-| 5 — Consumer SDK & rewards | ✅ Complete | Consumer SDK, rewards pool, dynamic thawing period |
-| Deployment | ✅ Complete | Contract deployed on Arbitrum One, subgraph live, npm packages published, e2e tests passing, security review done |
+| 1 — Core | ✅ Complete | Contract, indexer service, gateway, TAP payments, subgraph, CI |
+| 2 — Features | ✅ Complete | CU-weighted pricing, 10+ chains, geographic routing, capability tiers, metrics, rate limiting, WebSocket, batch RPC, dynamic discovery |
+| 3 — Ops | ✅ Complete | Unified endpoint, indexer agent, consumer SDK, dynamic thawing period governance |
+| Deployment | ✅ Complete | Contract on Arbitrum One, subgraph live, npm packages published, e2e tests passing |
 
 See [`ROADMAP.md`](ROADMAP.md) for full detail.
 
@@ -462,7 +431,7 @@ See [`ROADMAP.md`](ROADMAP.md) for full detail.
 | `indexer-agent` | ✅ `/indexer-agent` npm package handles register/startService/stopService lifecycle |
 | `edgeandnode/gateway` | ✅ `dispatch-gateway` implements equivalent logic for RPC; `/consumer-sdk` provides trustless alternative |
 | Graph Node | ❌ Not needed — standard Ethereum clients only |
-| POI / SubgraphService dispute system | ❌ Not applicable — RPC responses attested by provider signature |
+| POI / SubgraphService dispute system | ❌ Not applicable |
 
 ---
 

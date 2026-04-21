@@ -15,7 +15,7 @@ Consumer (dApp)
    │  TAP-Receipt: { signed EIP-712 receipt }
    ▼
 dispatch-service          ← JSON-RPC proxy, TAP receipt validation,
-   │                         response attestation, receipt persistence
+   │                         receipt persistence
    ▼
 Ethereum client           ← Geth / Erigon / Reth / Nethermind
 (full or archive)

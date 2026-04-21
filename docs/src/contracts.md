@@ -15,7 +15,7 @@ Registers a new provider.
 - `data`: `abi.encode(string endpoint, string geoHash, address paymentsDestination)`
 - Validates: provision ≥ `minimumProvisionTokens`, thawing period ≥ `minimumThawingPeriod`
 - Sets `paymentsDestination[serviceProvider]` (defaults to `serviceProvider` if zero address)
-- Emits `ServiceProviderRegistered`
+- Emits `ProviderRegistered`
 
 ### `setPaymentsDestination(destination)`
 
@@ -26,7 +26,7 @@ Changes the GRT recipient for collected fees. The new address takes effect on th
 Activates a provider for a specific chain and tier.
 
 - `data`: `abi.encode(uint64 chainId, uint8 tier, string endpoint)`
-- Validates: `chainId` in `supportedChains`, provider registered
+- Validates: `chainId` in `supportedChains`, provider registered, provision meets per-chain minimum
 - Emits `ServiceStarted`
 
 ### `stopService(serviceProvider, data)`
@@ -37,7 +37,7 @@ Deactivates a provider for a `(chainId, tier)` pair.
 
 Removes the provider from the registry. Must stop all active services first.
 
-### `collect(serviceProvider, data)`
+### `collect(serviceProvider, paymentType, data)`
 
 Redeems a signed RAV for GRT.
 
@@ -45,28 +45,19 @@ Redeems a signed RAV for GRT.
 - Reverts with `InvalidPaymentType` if `paymentType != QueryFee`
 - Calls `GraphTallyCollector.collect()` — verifies EIP-712 signature, tracks cumulative value
 - Routes GRT to `paymentsDestination[serviceProvider]`
-- Locks `fees × stakeToFeesRatio` via `_createStakeClaim()` (releases after `thawingPeriod`)
+- Locks `fees × STAKE_TO_FEES_RATIO` via `_lockStake()` (releases after `minThawingPeriod`)
 
-### `slash(serviceProvider, data)`
+### `addChain(chainId, minProvisionTokens)` / `removeChain(chainId)`
 
-Slashes a provider for a Tier 1 Merkle fraud proof.
-
-- `data`: `abi.encode(Tier1FraudProof)` — block hash, account address, dispute type, claimed value, EIP-1186 proofs, challenger address
-- Looks up `trustedStateRoots[blockHash]` (populated by `dispatch-oracle`)
-- Verifies proof via `StateProofVerifier.sol`
-- Calls `HorizonStaking.slash()` — 50% bounty to challenger
-
-### `proposeChain(chainId, minProvisionTokens)` / `approveProposedChain` / `rejectProposedChain`
-
-Permissionless chain registration. Proposer locks a 100k GRT bond. Governance approves or rejects within a window. Bond returned on approval, burned on rejection.
+Owner-only chain allowlist management. `minProvisionTokens = 0` uses the protocol default (25,000 GRT).
 
 ### `setMinThawingPeriod(period)`
 
 Governance setter. Lower-bounded by `MIN_THAWING_PERIOD` (14 days).
 
-### `claimRewards()`
+### `slash(serviceProvider, data)`
 
-Transfers accrued GRT issuance rewards to the caller. Rewards accrue on each `collect()` call when the rewards pool is funded.
+No-op — reverts with "slashing not supported". Present to satisfy the `IDataService` interface.
 
 ---
 
@@ -77,27 +68,3 @@ Transfers accrued GRT issuance rewards to the caller. Rewards accrue on each `co
 | Minimum provision | 25,000 GRT | Governance-adjustable per chain |
 | Minimum thawing period | 14 days | Governance-adjustable, lower-bounded |
 | stakeToFeesRatio | 5 | Same as SubgraphService |
-| Max slash % | 10% | Tier 1 fraud proofs only |
-| Chain proposal bond | 100,000 GRT | Burned on rejection |
-
----
-
-## StateProofVerifier
-
-`contracts/src/lib/StateProofVerifier.sol` — EIP-1186 Merkle-Patricia trie verification using OpenZeppelin's MPT library.
-
-```solidity
-function verifyAccount(
-    bytes32 stateRoot,
-    address account,
-    bytes[] calldata accountProof
-) external pure returns (AccountFields memory);
-
-function verifyStorage(
-    bytes32 storageHash,
-    bytes32 storageKey,
-    bytes[] calldata storageProof
-) external pure returns (bytes32 value);
-```
-
-Used by `slash()` to verify on-chain that a provider's attested response is inconsistent with the Ethereum state trie.

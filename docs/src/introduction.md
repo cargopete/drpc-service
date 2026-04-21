@@ -11,9 +11,9 @@ Inspired by the [Q3 2026 "Experimental JSON-RPC Data Service"](https://thegraph.
 
 ## What it does
 
-An application calls `eth_getBalance`. Instead of hitting a centralised RPC provider, the request routes to a staked indexer in the Dispatch network. The indexer signs the response with an attestation, persists a TAP receipt, and returns the data. GRT flows on-chain automatically via GraphTally.
+An application calls `eth_getBalance`. Instead of hitting a centralised RPC provider, the request routes to a staked indexer in the Dispatch network. The indexer persists a TAP receipt and returns the data. GRT flows on-chain automatically via GraphTally.
 
-That's the loop. Everything else — quorum verification, fraud proof slashing, geographic routing, CU-weighted pricing — is built on top of that.
+That's the loop.
 
 ---
 
@@ -30,7 +30,6 @@ That's the loop. Everything else — quorum verification, fraud proof slashing, 
 | RAV aggregation (off-chain) | ✅ Working — gateway batches receipts into signed RAVs every 60s |
 | On-chain `collect()` | ✅ Working — GRT settles on-chain automatically every hour |
 | Provider on-chain registration | ✅ Confirmed on-chain |
-| `dispatch-oracle` | ❌ Not running — required for Tier 1 Merkle proof slashing |
 | Multi-provider discovery | ❌ Gateway uses static config, not dynamic subgraph discovery yet |
 | Local demo | ✅ Working — full payment loop on Anvil |
 
@@ -49,4 +48,4 @@ Dispatch reuses most of the Horizon stack rather than reinventing it:
 | `indexer-tap-agent` | ❌ Not used — TAP aggregation and on-chain collection are built into `dispatch-service` |
 | `indexer-service-rs` TAP middleware | ✅ Logic ported to `dispatch-service` |
 | Graph Node | ❌ Not needed — standard Ethereum clients only |
-| POI / SubgraphService dispute system | ❌ Replaced by tiered verification framework |
+| POI / SubgraphService dispute system | ❌ Not applicable — JSON-RPC responses have no on-chain verifier |
