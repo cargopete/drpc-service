@@ -9,7 +9,6 @@ use crate::{
     config::Config,
     db,
     routes,
-    tap,
     tap_aggregator,
 };
 
@@ -28,7 +27,7 @@ pub struct AppState {
 pub async fn run(config: Config) -> Result<()> {
     let attester = Attester::from_hex(&config.indexer.operator_private_key)?;
 
-    let tap_domain_separator = tap::domain_separator(
+    let tap_domain_separator = dispatch_tap::domain_separator(
         &config.tap.eip712_domain_name,
         config.tap.eip712_chain_id,
         config.tap.eip712_verifying_contract,

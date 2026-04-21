@@ -42,27 +42,6 @@ fn parse_b256(s: Option<&str>) -> B256 {
     .unwrap_or(B256::ZERO)
 }
 
-/// Compute units (CU) for a given method.
-/// Phase 1: all methods return the flat baseline weight.
-/// Phase 2: expand this with per-method weights from the RFC.
-pub fn cu_weight(method: &str) -> u32 {
-    match method {
-        "eth_chainId" | "net_version" | "eth_blockNumber" => 1,
-        "eth_getBalance"
-        | "eth_getTransactionCount"
-        | "eth_getCode"
-        | "eth_getStorageAt"
-        | "eth_sendRawTransaction" => 5,
-        "eth_getBlockByHash" | "eth_getBlockByNumber" => 5,
-        "eth_call"
-        | "eth_estimateGas"
-        | "eth_getTransactionReceipt"
-        | "eth_getTransactionByHash" => 10,
-        "eth_getLogs" => 20,
-        _ => 10, // conservative default
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

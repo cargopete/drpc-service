@@ -82,19 +82,10 @@ pub struct QosConfig {
     /// How often to probe all providers with synthetic eth_blockNumber requests.
     #[serde(default = "default_probe_interval_secs")]
     pub probe_interval_secs: u64,
-    /// Weights must sum to 1.0. Defaults match RFC spec.
-    #[serde(default = "default_latency_weight")]
-    pub latency_weight: f64,
-    #[serde(default = "default_availability_weight")]
-    pub availability_weight: f64,
-    #[serde(default = "default_freshness_weight")]
-    pub freshness_weight: f64,
     /// Number of providers to dispatch to concurrently (first response wins).
     #[serde(default = "default_concurrent_k")]
     pub concurrent_k: usize,
     /// Score bonus added for providers in the same region as this gateway.
-    /// Helps bootstrap traffic to nearby providers before latency data exists.
-    /// Default: 0.15 (adds 15 percentage points to same-region provider weight).
     #[serde(default = "default_region_bonus")]
     pub region_bonus: f64,
 }
@@ -166,9 +157,6 @@ fn default_tap_verifying_contract() -> Address {
     "0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e".parse().unwrap()
 }
 fn default_probe_interval_secs() -> u64 { 10 }
-fn default_latency_weight() -> f64 { 0.30 }
-fn default_availability_weight() -> f64 { 0.30 }
-fn default_freshness_weight() -> f64 { 0.25 }
 fn default_concurrent_k() -> usize { 3 }
 fn default_discovery_interval_secs() -> u64 { 60 }
 fn default_rps() -> u32 { 100 }

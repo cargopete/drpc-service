@@ -1,11 +1,6 @@
 //! Per-provider QoS tracking.
 //!
-//! Metrics per provider (RFC §7):
-//!   Latency     (30%) — EMA of response time in ms
-//!   Availability(30%) — rolling success rate
-//!   Freshness   (25%) — blocks behind chain head (exponential decay)
-//!   Correctness (15%) — Phase 2 (spot-check pass rate)
-//!
+//! Score = 35% latency + 35% availability + 30% freshness.
 //! All fields use atomics so they can be updated concurrently from the probe
 //! task and the request handler without locks on the hot path.
 
@@ -39,12 +34,10 @@ const LATENCY_ALPHA_DEN: u64 = 10;
 
 impl ProviderQos {
     /// Compute a combined score in [0.0, 1.0].
-    /// Weights: latency 30%, availability 30%, freshness 25%, correctness 15% (Phase 2 = 1.0).
     pub fn score(&self, chain_head: u64) -> f64 {
-        0.30 * self.latency_score()
-            + 0.30 * self.availability_score()
-            + 0.25 * self.freshness_score(chain_head)
-            + 0.15 * 1.0 // correctness: Phase 2
+        0.35 * self.latency_score()
+            + 0.35 * self.availability_score()
+            + 0.30 * self.freshness_score(chain_head)
     }
 
     /// Record a successful response and update latency EMA.
