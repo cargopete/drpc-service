@@ -14,11 +14,7 @@ use axum::{extract::State, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 
 use alloy_primitives::{Address, Bytes};
-use dispatch_tap::{
-    eip712::{eip712_hash, recover_signer},
-    rav::{collection_id, sign_rav, Rav},
-    SignedRav, SignedReceipt,
-};
+use dispatch_tap::{collection_id, eip712_hash, recover_signer, sign_rav, Rav, SignedRav, SignedReceipt};
 
 use crate::{error::GatewayError, server::AppState};
 

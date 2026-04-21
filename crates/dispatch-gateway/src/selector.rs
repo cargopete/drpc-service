@@ -84,26 +84,22 @@ mod tests {
     use alloy_primitives::Address;
 
     fn make_provider(endpoint: &str) -> Arc<Provider> {
-        use crate::config::CapabilityTier;
         Arc::new(Provider {
             address: Address::ZERO,
             endpoint: endpoint.to_string(),
             chains: vec![1],
             region: None,
-            capabilities: vec![CapabilityTier::Standard],
             chain_capabilities: std::collections::HashMap::new(),
             qos: ProviderQos::default(),
         })
     }
 
     fn make_provider_with_region(endpoint: &str, region: &str) -> Arc<Provider> {
-        use crate::config::CapabilityTier;
         Arc::new(Provider {
             address: Address::ZERO,
             endpoint: endpoint.to_string(),
             chains: vec![1],
             region: Some(region.to_string()),
-            capabilities: vec![CapabilityTier::Standard],
             chain_capabilities: std::collections::HashMap::new(),
             qos: ProviderQos::default(),
         })
