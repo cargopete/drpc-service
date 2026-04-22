@@ -9,3 +9,12 @@ agent.config.json
 .env
 docs/book
 contracts/script/TestCollect.s.sol
+
+# Build artifacts & dependencies
+node_modules/
+dist/
+package-lock.json
+subgraph/build/
+
+# Foundry broadcast artifacts
+contracts/broadcast/

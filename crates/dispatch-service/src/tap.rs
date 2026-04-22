@@ -62,3 +62,111 @@ pub fn validate_receipt(
         signature: signed.signature,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::{address, Address, Bytes};
+    use dispatch_tap::{address_from_key, create_receipt, domain_separator};
+    use k256::ecdsa::SigningKey;
+
+    const DATA_SERVICE: Address = address!("A983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078");
+    const TALLY_COLLECTOR: Address = address!("8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e");
+    const PROVIDER: Address = address!("1111111111111111111111111111111111111111");
+    const MAX_AGE_NS: u64 = 5 * 60 * 1_000_000_000; // 5 minutes
+
+    fn signer_key() -> SigningKey {
+        SigningKey::from_slice(&[0x42u8; 32]).unwrap()
+    }
+
+    fn other_key() -> SigningKey {
+        SigningKey::from_slice(&[0x99u8; 32]).unwrap()
+    }
+
+    fn dom() -> alloy_primitives::B256 {
+        domain_separator("GraphTallyCollector", 42161, TALLY_COLLECTOR)
+    }
+
+    fn now_ns() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64
+    }
+
+    fn make_header(key: &SigningKey) -> String {
+        let signed = create_receipt(key, dom(), DATA_SERVICE, PROVIDER, 1_000, Bytes::default()).unwrap();
+        serde_json::to_string(&signed).unwrap()
+    }
+
+    #[test]
+    fn happy_path() {
+        let key = signer_key();
+        let signer = address_from_key(&key);
+        let result = validate_receipt(&make_header(&key), dom(), &[signer], DATA_SERVICE, PROVIDER, MAX_AGE_NS, now_ns());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().signer, signer);
+    }
+
+    #[test]
+    fn empty_authorized_senders_accepts_any_signer() {
+        let key = signer_key();
+        let result = validate_receipt(&make_header(&key), dom(), &[], DATA_SERVICE, PROVIDER, MAX_AGE_NS, now_ns());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn invalid_json_is_rejected() {
+        let result = validate_receipt("not-json-at-all", dom(), &[], DATA_SERVICE, PROVIDER, MAX_AGE_NS, now_ns());
+        assert!(matches!(result, Err(ServiceError::InvalidReceipt(_))));
+    }
+
+    #[test]
+    fn data_service_mismatch_is_rejected() {
+        let key = signer_key();
+        let wrong_ds = address!("2222222222222222222222222222222222222222");
+        let signed = create_receipt(&key, dom(), wrong_ds, PROVIDER, 1_000, Bytes::default()).unwrap();
+        let header = serde_json::to_string(&signed).unwrap();
+        let result = validate_receipt(&header, dom(), &[], DATA_SERVICE, PROVIDER, MAX_AGE_NS, now_ns());
+        assert!(matches!(result, Err(ServiceError::InvalidReceipt(_))));
+    }
+
+    #[test]
+    fn service_provider_mismatch_is_rejected() {
+        let key = signer_key();
+        let wrong_provider = address!("3333333333333333333333333333333333333333");
+        let signed = create_receipt(&key, dom(), DATA_SERVICE, wrong_provider, 1_000, Bytes::default()).unwrap();
+        let header = serde_json::to_string(&signed).unwrap();
+        let result = validate_receipt(&header, dom(), &[], DATA_SERVICE, PROVIDER, MAX_AGE_NS, now_ns());
+        assert!(matches!(result, Err(ServiceError::InvalidReceipt(_))));
+    }
+
+    #[test]
+    fn expired_receipt_is_rejected() {
+        let key = signer_key();
+        let header = make_header(&key);
+        // Advance time past the max age window
+        let future_ns = now_ns() + MAX_AGE_NS + 1;
+        let result = validate_receipt(&header, dom(), &[], DATA_SERVICE, PROVIDER, MAX_AGE_NS, future_ns);
+        assert!(matches!(result, Err(ServiceError::ReceiptExpired)));
+    }
+
+    #[test]
+    fn invalid_signature_is_rejected() {
+        let key = signer_key();
+        let mut signed = create_receipt(&key, dom(), DATA_SERVICE, PROVIDER, 1_000, Bytes::default()).unwrap();
+        // v = 0xff → rec_id = 255 − 27 = 228, not a valid recovery id (must be 0 or 1)
+        signed.signature = format!("0x{}", "ff".repeat(65));
+        let header = serde_json::to_string(&signed).unwrap();
+        let result = validate_receipt(&header, dom(), &[], DATA_SERVICE, PROVIDER, MAX_AGE_NS, now_ns());
+        assert!(matches!(result, Err(ServiceError::InvalidReceipt(_))));
+    }
+
+    #[test]
+    fn unauthorized_sender_is_rejected() {
+        let key = signer_key();
+        let authorized = address_from_key(&other_key()); // different from signer_key
+        let result = validate_receipt(&make_header(&key), dom(), &[authorized], DATA_SERVICE, PROVIDER, MAX_AGE_NS, now_ns());
+        assert!(matches!(result, Err(ServiceError::UnauthorizedSender(_))));
+    }
+}

@@ -628,4 +628,141 @@ mod tests {
         assert!(!requires_quorum("eth_estimateGas"));
         assert!(!requires_quorum("eth_sendRawTransaction"));
     }
+
+    // --- JsonRpcRequest::validate ---
+
+    #[test]
+    fn validate_accepts_valid_request() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "eth_blockNumber".to_string(),
+            params: None,
+            id: Some(json!(1)),
+        };
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_wrong_jsonrpc_version() {
+        let req = JsonRpcRequest {
+            jsonrpc: "1.0".to_string(),
+            method: "eth_blockNumber".to_string(),
+            params: None,
+            id: None,
+        };
+        assert!(matches!(req.validate(), Err(GatewayError::InvalidRequest(_))));
+    }
+
+    #[test]
+    fn validate_rejects_empty_method() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: String::new(),
+            params: None,
+            id: None,
+        };
+        assert!(matches!(req.validate(), Err(GatewayError::InvalidRequest(_))));
+    }
+
+    // --- cu_weight_for ---
+
+    #[test]
+    fn cu_weight_known_methods() {
+        assert_eq!(cu_weight_for("eth_blockNumber"), 1);
+        assert_eq!(cu_weight_for("eth_chainId"), 1);
+        assert_eq!(cu_weight_for("eth_getBalance"), 5);
+        assert_eq!(cu_weight_for("eth_call"), 10);
+        assert_eq!(cu_weight_for("eth_getLogs"), 20);
+        assert_eq!(cu_weight_for("eth_getTransactionReceipt"), 10);
+        assert_eq!(cu_weight_for("eth_sendRawTransaction"), 5);
+    }
+
+    #[test]
+    fn cu_weight_unknown_defaults_to_10() {
+        assert_eq!(cu_weight_for("eth_newPendingTransactionFilter"), 10);
+        assert_eq!(cu_weight_for("debug_traceCall"), 10);
+    }
+
+    // --- verify_attestation ---
+
+    #[test]
+    fn verify_attestation_absent_returns_none() {
+        assert!(verify_attestation(None, 1, "eth_blockNumber", "[]", r#""0x100""#).is_none());
+    }
+
+    #[test]
+    fn verify_attestation_malformed_json_returns_none() {
+        assert!(verify_attestation(Some("not-json"), 1, "eth_blockNumber", "[]", r#""0x100""#).is_none());
+    }
+
+    #[test]
+    fn verify_attestation_signer_mismatch_returns_none() {
+        use k256::ecdsa::SigningKey;
+
+        let key = SigningKey::from_slice(&[0x42u8; 32]).unwrap();
+
+        let chain_id: u64 = 1;
+        let method = "eth_blockNumber";
+        let params_json = "[]";
+        let result_json = r#""0x100""#;
+
+        let params_hash = keccak256(params_json.as_bytes());
+        let result_hash = keccak256(result_json.as_bytes());
+        let mut msg = Vec::new();
+        msg.extend_from_slice(&chain_id.to_be_bytes());
+        msg.extend_from_slice(method.as_bytes());
+        msg.extend_from_slice(params_hash.as_slice());
+        msg.extend_from_slice(result_hash.as_slice());
+        let msg_hash = keccak256(&msg);
+
+        let (sig, rec_id) = key.sign_prehash_recoverable(msg_hash.as_slice()).unwrap();
+        let mut sig_bytes = [0u8; 65];
+        sig_bytes[..64].copy_from_slice(&sig.to_bytes());
+        sig_bytes[64] = rec_id.to_byte() + 27;
+        let sig_hex = format!("0x{}", hex::encode(sig_bytes));
+
+        // Correct signature but wrong stated signer → mismatch
+        let att = json!({
+            "signer": "0x0000000000000000000000000000000000000001",
+            "signature": sig_hex,
+        }).to_string();
+
+        assert!(verify_attestation(Some(&att), chain_id, method, params_json, result_json).is_none());
+    }
+
+    #[test]
+    fn verify_attestation_valid() {
+        use dispatch_tap::address_from_key;
+        use k256::ecdsa::SigningKey;
+
+        let key = SigningKey::from_slice(&[0x42u8; 32]).unwrap();
+        let signer = address_from_key(&key);
+
+        let chain_id: u64 = 1;
+        let method = "eth_blockNumber";
+        let params_json = "[]";
+        let result_json = r#""0x100""#;
+
+        let params_hash = keccak256(params_json.as_bytes());
+        let result_hash = keccak256(result_json.as_bytes());
+        let mut msg = Vec::new();
+        msg.extend_from_slice(&chain_id.to_be_bytes());
+        msg.extend_from_slice(method.as_bytes());
+        msg.extend_from_slice(params_hash.as_slice());
+        msg.extend_from_slice(result_hash.as_slice());
+        let msg_hash = keccak256(&msg);
+
+        let (sig, rec_id) = key.sign_prehash_recoverable(msg_hash.as_slice()).unwrap();
+        let mut sig_bytes = [0u8; 65];
+        sig_bytes[..64].copy_from_slice(&sig.to_bytes());
+        sig_bytes[64] = rec_id.to_byte() + 27;
+        let sig_hex = format!("0x{}", hex::encode(sig_bytes));
+
+        let att = json!({
+            "signer": signer.to_string().to_lowercase(),
+            "signature": sig_hex,
+        }).to_string();
+
+        assert!(verify_attestation(Some(&att), chain_id, method, params_json, result_json).is_some());
+    }
 }

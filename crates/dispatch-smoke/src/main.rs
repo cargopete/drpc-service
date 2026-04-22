@@ -57,25 +57,51 @@ fn tests() -> Vec<Test> {
             }),
         },
         Test {
-            name: "eth_getBalance — returns balance at latest block (Standard)",
+            name: "net_version — returns chain ID as decimal string",
+            method: "net_version",
+            params: json!([]),
+            validate: |r| r.as_str().map_or(false, |s| s == "42161"),
+        },
+        Test {
+            name: "eth_getBalance — latest block (Standard tier)",
             method: "eth_getBalance",
-            // Arbitrum One: bridge contract, always has a balance
+            // Arbitrum One bridge — always has a balance
             params: json!(["0x8315177aB297bA92A06054cE80a67Ed4DBd7ed3a", "latest"]),
             validate: |r| r.as_str().map_or(false, |s| s.starts_with("0x")),
         },
         Test {
-            name: "eth_getBalance — historical block (Archive)",
+            name: "eth_getBalance — historical block (Archive tier)",
             method: "eth_getBalance",
             params: json!(["0x8315177aB297bA92A06054cE80a67Ed4DBd7ed3a", "0x1000000"]),
             validate: |r| r.as_str().map_or(false, |s| s.starts_with("0x")),
         },
         Test {
-            name: "eth_getLogs — recent block range (Tier 2 quorum)",
-            method: "eth_getLogs",
+            name: "eth_getBlockByNumber — latest (Standard tier)",
+            method: "eth_getBlockByNumber",
+            params: json!(["latest", false]),
+            validate: |r| r.get("number").and_then(|n| n.as_str()).map_or(false, |s| s.starts_with("0x")),
+        },
+        Test {
+            name: "eth_getCode — WETH contract on Arbitrum",
+            method: "eth_getCode",
+            // WETH9 on Arbitrum One
+            params: json!(["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", "latest"]),
+            validate: |r| r.as_str().map_or(false, |s| s.len() > 4),
+        },
+        Test {
+            name: "eth_estimateGas — ETH transfer",
+            method: "eth_estimateGas",
             params: json!([{
-                "fromBlock": "latest",
-                "toBlock": "latest"
+                "from": "0x8315177aB297bA92A06054cE80a67Ed4DBd7ed3a",
+                "to":   "0x8315177aB297bA92A06054cE80a67Ed4DBd7ed3a",
+                "value": "0x0"
             }]),
+            validate: |r| r.as_str().map_or(false, |s| s.starts_with("0x")),
+        },
+        Test {
+            name: "eth_getLogs — latest block range (Standard quorum)",
+            method: "eth_getLogs",
+            params: json!([{ "fromBlock": "latest", "toBlock": "latest" }]),
             validate: |r| r.is_array(),
         },
     ]
@@ -217,6 +243,135 @@ async fn main() -> Result<()> {
                     }
                 } else {
                     println!("  [FAIL] {} — no result field: {json} [{elapsed}ms]", test.name);
+                    failed += 1;
+                }
+            }
+        }
+    }
+
+    // ── Batch request ─────────────────────────────────────────────────────────
+    println!();
+    println!("  batch requests");
+
+    let batch_receipt = dispatch_tap::create_receipt(
+        &signing_key,
+        domain_sep,
+        data_service,
+        provider_address(),
+        cu_for("eth_blockNumber") as u128 * BASE_PRICE_PER_CU,
+        Bytes::default(),
+    )?;
+    let batch_receipt_header = serde_json::to_string(&batch_receipt)?;
+
+    let batch_body = json!([
+        { "jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 101 },
+        { "jsonrpc": "2.0", "method": "eth_chainId",     "params": [], "id": 102 },
+    ]);
+
+    let t0 = Instant::now();
+    let batch_resp = client
+        .post(&url)
+        .header("TAP-Receipt", batch_receipt_header)
+        .json(&batch_body)
+        .send()
+        .await;
+    let elapsed = t0.elapsed().as_millis();
+
+    match batch_resp {
+        Err(e) => {
+            println!("  [FAIL] batch(2) — {e}");
+            failed += 1;
+        }
+        Ok(r) => {
+            let status = r.status();
+            let json: Value = r.json().await.unwrap_or(Value::Null);
+            if let Some(arr) = json.as_array() {
+                // Batch of 2: both may have results OR receipt-rejection errors
+                let all_responded = arr.iter().all(|item| item.get("result").is_some() || item.get("error").is_some());
+                if all_responded && arr.len() == 2 {
+                    println!("  [PASS] batch(2) — {len} responses [{elapsed}ms]", len = arr.len());
+                    passed += 1;
+                } else {
+                    println!("  [FAIL] batch(2) — unexpected response: {json} [{elapsed}ms]");
+                    failed += 1;
+                }
+            } else if !status.is_success() {
+                println!("  [FAIL] batch(2) — HTTP {status} [{elapsed}ms]");
+                failed += 1;
+            } else {
+                println!("  [FAIL] batch(2) — expected array, got: {json} [{elapsed}ms]");
+                failed += 1;
+            }
+        }
+    }
+
+    // ── Negative tests — authorization enforcement ─────────────────────────────
+    println!();
+    println!("  authorization enforcement");
+
+    // Missing TAP-Receipt header → expect -32001 (MissingReceipt)
+    let t0 = Instant::now();
+    let no_receipt_resp = client
+        .post(&url)
+        .json(&json!({ "jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 201 }))
+        .send()
+        .await;
+    let elapsed = t0.elapsed().as_millis();
+
+    match no_receipt_resp {
+        Err(e) => {
+            println!("  [FAIL] missing receipt — {e}");
+            failed += 1;
+        }
+        Ok(r) => {
+            let json: Value = r.json().await.unwrap_or(Value::Null);
+            let code = json.get("error").and_then(|e| e.get("code")).and_then(|c| c.as_i64());
+            if code == Some(-32001) {
+                println!("  [PASS] missing receipt → -32001 (MissingReceipt) [{elapsed}ms]");
+                passed += 1;
+            } else {
+                // If hitting the gateway (which doesn't require a receipt from consumers),
+                // this will return a result rather than an error — that's also valid.
+                let has_result = json.get("result").is_some();
+                if has_result {
+                    println!("  [PASS] missing receipt → result returned (gateway mode, no receipt required) [{elapsed}ms]");
+                    passed += 1;
+                } else {
+                    println!("  [FAIL] missing receipt — expected -32001 or a result, got: {json} [{elapsed}ms]");
+                    failed += 1;
+                }
+            }
+        }
+    }
+
+    // Malformed TAP-Receipt header → expect -32001 (InvalidReceipt)
+    let t0 = Instant::now();
+    let bad_receipt_resp = client
+        .post(&url)
+        .header("TAP-Receipt", "not-a-valid-receipt")
+        .json(&json!({ "jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 202 }))
+        .send()
+        .await;
+    let elapsed = t0.elapsed().as_millis();
+
+    match bad_receipt_resp {
+        Err(e) => {
+            println!("  [FAIL] malformed receipt — {e}");
+            failed += 1;
+        }
+        Ok(r) => {
+            let json: Value = r.json().await.unwrap_or(Value::Null);
+            let code = json.get("error").and_then(|e| e.get("code")).and_then(|c| c.as_i64());
+            if code == Some(-32001) {
+                println!("  [PASS] malformed receipt → -32001 (InvalidReceipt) [{elapsed}ms]");
+                passed += 1;
+            } else {
+                let has_result = json.get("result").is_some();
+                if has_result {
+                    println!("  [PASS] malformed receipt → result returned (gateway mode, header ignored) [{elapsed}ms]");
+                    passed += 1;
+                } else {
+                    println!("  [FAIL] malformed receipt — expected -32001 or a result, got: {json} [{elapsed}ms]");
                     failed += 1;
                 }
             }

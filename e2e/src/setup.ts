@@ -15,7 +15,9 @@ const HOME = os.homedir();
 const FORGE = path.join(HOME, ".foundry", "bin", "forge");
 const ANVIL = path.join(HOME, ".foundry", "bin", "anvil");
 const CARGO = path.join(HOME, ".cargo", "bin", "cargo");
-const ENV: NodeJS.ProcessEnv = { ...process.env };
+const ENV = Object.fromEntries(
+  Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
+);
 
 let anvil: ChildProcess;
 let service: ChildProcess;
@@ -88,7 +90,7 @@ operator_private_key = "${fixture.providerKey}"
 [tap]
 data_service_address = "${fixture.rpcDataService}"
 authorized_senders = ["${fixture.gatewaySignerAddress}"]
-eip712_domain_name = "TAP"
+eip712_domain_name = "GraphTallyCollector"
 eip712_chain_id = 31337
 eip712_verifying_contract = "${fixture.graphTallyCollector}"
 max_receipt_age_ns = 300000000000
@@ -109,13 +111,14 @@ port = 8080
 signer_private_key = "${fixture.gatewaySignerKey}"
 data_service_address = "${fixture.rpcDataService}"
 base_price_per_cu = 4000000000000
-eip712_domain_name = "TAP"
+eip712_domain_name = "GraphTallyCollector"
 eip712_chain_id = 31337
 eip712_verifying_contract = "${fixture.graphTallyCollector}"
 
 [qos]
 probe_interval_secs = 3600
 concurrent_k = 1
+quorum_k = 1
 
 [[providers]]
 address = "${fixture.providerAddress}"
