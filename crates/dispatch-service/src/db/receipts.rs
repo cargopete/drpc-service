@@ -4,9 +4,6 @@ use crate::{db::Pool, tap::ValidatedReceipt};
 
 /// Persist a validated TAP receipt to PostgreSQL.
 ///
-/// The AFTER INSERT trigger on `tap_receipts` fires a NOTIFY so the TAP agent
-/// can immediately pick up the receipt for aggregation.
-///
 /// Returns the auto-assigned row `id`.
 pub async fn insert(pool: &Pool, chain_id: u64, validated: &ValidatedReceipt) -> anyhow::Result<i64> {
     let row = sqlx::query(

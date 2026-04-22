@@ -133,22 +133,13 @@ async fn fetch_providers(
         }
 
         let chains: Vec<u64> = chain_caps.keys().copied().collect();
-        // Global capabilities = union across all chains (used as fallback).
-        let mut capabilities: Vec<crate::config::CapabilityTier> = Vec::new();
-        for caps in chain_caps.values() {
-            for t in caps {
-                if !capabilities.contains(t) {
-                    capabilities.push(t.clone());
-                }
-            }
-        }
 
         providers.push(ProviderConfig {
             address,
             endpoint: indexer.endpoint.trim_end_matches('/').to_string(),
             chains,
             region: indexer.geo_hash.filter(|s| !s.is_empty()),
-            capabilities,
+            capabilities: Vec::new(), // unused — chain_capabilities drives routing
             chain_capabilities: chain_caps,
         });
     }

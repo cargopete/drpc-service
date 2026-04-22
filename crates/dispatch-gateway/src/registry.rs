@@ -1,8 +1,7 @@
 //! Provider registry — maps chain IDs to available providers.
 //!
-//! Phase 1: static configuration loaded at startup.
-//! Phase 2: dynamic discovery by watching RPCDataService events on-chain
-//!           and querying the RPC network subgraph.
+//! Populated at startup from static TOML config and refreshed at runtime
+//! via subgraph-based dynamic discovery.
 
 use std::{
     collections::HashMap,
@@ -23,7 +22,6 @@ pub struct Provider {
     pub endpoint: String,
     pub chains: Vec<u64>,
     pub region: Option<String>,
-    pub capabilities: Vec<CapabilityTier>,
     /// Per-chain capability map used for tier-aware routing.
     /// Key = chain ID; value = tiers this provider supports on that chain.
     pub chain_capabilities: HashMap<u64, Vec<CapabilityTier>>,
@@ -44,7 +42,6 @@ impl Provider {
             endpoint: cfg.endpoint.trim_end_matches('/').to_string(),
             chains: cfg.chains.clone(),
             region: cfg.region.clone(),
-            capabilities: cfg.capabilities.clone(),
             chain_capabilities,
             qos: ProviderQos::default(),
         }

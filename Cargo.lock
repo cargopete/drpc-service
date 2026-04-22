@@ -1295,22 +1295,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dispatch-oracle"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-primitives",
- "anyhow",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "dispatch-service"
 version = "0.1.0"
 dependencies = [
@@ -1322,7 +1306,6 @@ dependencies = [
  "dispatch-tap",
  "futures-util",
  "hex",
- "k256",
  "reqwest",
  "serde",
  "serde_json",

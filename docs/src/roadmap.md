@@ -6,11 +6,10 @@ Aligns with The Graph's 2026 Technical Roadmap ("Experimental JSON-RPC Data Serv
 
 ## Phase 1 — MVP ✅
 
-- `RPCDataService.sol` — register, startService, stopService, collect, slash
+- `RPCDataService.sol` — register, startService, stopService, collect
 - `paymentsDestination` — decouple payment recipient from operator key
 - `dispatch-service` — JSON-RPC proxy with TAP receipt validation
 - `dispatch-gateway` — QoS routing, TAP receipt signing, metrics
-- RPC attestation scheme
 - RPC network subgraph
 - Integration tests (real Horizon payment contracts, mock staking only)
 - EIP-712 cross-language compatibility tests (Solidity ↔ Rust)
@@ -19,7 +18,6 @@ Aligns with The Graph's 2026 Technical Roadmap ("Experimental JSON-RPC Data Serv
 
 ## Phase 2 — Production Foundation ✅
 
-- Quorum consensus for `eth_call` and `eth_getLogs`
 - 10+ chains
 - CU-weighted pricing (1–20 CU per method)
 - QoS scoring with latency, availability, freshness
@@ -33,23 +31,18 @@ Aligns with The Graph's 2026 Technical Roadmap ("Experimental JSON-RPC Data Serv
 ## Phase 3 — Full Feature Parity ✅
 
 - WebSocket subscriptions (`eth_subscribe` / `eth_unsubscribe`)
-- Tier 1 fraud proof slashing (`StateProofVerifier.sol`)
-- `dispatch-oracle` — block header trust service
 - Archive tier routing (hex block numbers, `"earliest"`)
 - `debug_*` / `trace_*` routing per chain capability
 
 ## Phase 4 — Production Readiness ✅
 
 - Cross-chain unified `/rpc` endpoint with `X-Chain-Id` header
-- Permissionless chain registration (100k GRT bond, governance approval)
-- GRT issuance groundwork
 - Indexer agent (`@dispatch/indexer-agent`)
 - Subgraph schema v2
 
-## Phase 5 — Consumer SDK & Rewards ✅
+## Phase 5 — Consumer SDK ✅
 
 - Consumer SDK (`@dispatch/consumer-sdk`)
-- Rewards pool (`depositRewardsPool`, `claimRewards`)
 - Dynamic thawing period governance setter
 
 ---

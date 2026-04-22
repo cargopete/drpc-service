@@ -8,7 +8,7 @@ pub mod rav;
 pub mod sign;
 pub mod types;
 
-pub use eip712::{address_from_key, domain_separator, recover_signer};
-pub use rav::{Rav, SignedRav};
+pub use eip712::{address_from_key, domain_separator, eip712_hash, recover_signer};
+pub use rav::{collection_id, sign_rav, Rav, SignedRav};
 pub use sign::create_receipt;
 pub use types::{Receipt, SignedReceipt};

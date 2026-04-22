@@ -33,10 +33,15 @@ pub fn spawn(config: Arc<Config>, pool: Pool) {
     let interval = Duration::from_secs(config.tap.aggregation_interval_secs);
     tracing::info!(%url, interval_secs = interval.as_secs(), "RAV aggregator started");
 
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("failed to build HTTP client");
+
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(interval).await;
-            if let Err(e) = run_once(&url, &config, &pool).await {
+            if let Err(e) = run_once(&url, &config, &pool, &client).await {
                 tracing::warn!("RAV aggregation cycle failed: {e:#}");
             }
         }
@@ -47,17 +52,13 @@ pub fn spawn(config: Arc<Config>, pool: Pool) {
 // One aggregation cycle
 // ---------------------------------------------------------------------------
 
-async fn run_once(aggregator_url: &str, config: &Config, pool: &Pool) -> anyhow::Result<()> {
+async fn run_once(aggregator_url: &str, config: &Config, pool: &Pool, client: &reqwest::Client) -> anyhow::Result<()> {
     let payers = distinct_payers(pool).await?;
 
     if payers.is_empty() {
         tracing::debug!("no receipts in db, skipping aggregation");
         return Ok(());
     }
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
 
     let service_provider = config.indexer.service_provider_address;
     let data_service = config.tap.data_service_address;
