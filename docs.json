@@ -1,5 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
   "name": "Dispatch",
   "description": "Experimental decentralised JSON-RPC data service on The Graph Horizon",
   "navigation": [
