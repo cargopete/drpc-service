@@ -55,7 +55,7 @@ pub struct TapConfig {
     pub data_service_address: Address,
     /// Gateway addresses authorised to issue TAP receipts.
     pub authorized_senders: Vec<Address>,
-    /// EIP-712 domain name for GraphTallyCollector (e.g. "TAP").
+    /// EIP-712 domain name for GraphTallyCollector (e.g. "GraphTallyCollector").
     pub eip712_domain_name: String,
     /// Chain ID where GraphTallyCollector is deployed (42161 = Arbitrum One).
     #[serde(default = "default_tap_chain_id")]
@@ -103,7 +103,7 @@ fn default_tap_chain_id() -> u64 {
 }
 fn default_tap_verifying_contract() -> Address {
     // GraphTallyCollector on Arbitrum One
-    "0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e"
+    "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e"
         .parse()
         .unwrap()
 }

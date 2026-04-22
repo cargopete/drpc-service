@@ -157,7 +157,7 @@ fn default_port() -> u16 { 8080 }
 fn default_base_price_per_cu() -> u128 { 4_000_000_000_000 } // 4e-6 GRT per CU
 fn default_tap_chain_id() -> u64 { 42161 }
 fn default_tap_verifying_contract() -> Address {
-    "0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e".parse().unwrap()
+    "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e".parse().unwrap()
 }
 fn default_probe_interval_secs() -> u64 { 10 }
 fn default_concurrent_k() -> usize { 3 }

@@ -130,7 +130,7 @@ Key responsibilities:
 - Persist receipts to PostgreSQL; background task aggregates into RAVs every 60s and calls `collect()` hourly
 - WebSocket proxy for `eth_subscribe` / `eth_unsubscribe`
 
-Routes: `POST /rpc/{chain_id}` · `GET /ws/{chain_id}` · `GET /health` · `GET /version` · `GET /chains`
+Routes: `POST /rpc/{chain_id}` · `GET /ws/{chain_id}` · `GET /health` · `GET /version` · `GET /chains` · `GET /block/{chain_id}`
 
 ### `dispatch-gateway`
 Sits between consumers and indexers. Manages provider discovery, quality scoring, and payment issuance.
@@ -358,6 +358,7 @@ authorized_senders        = ["0x..."]  # gateway signer address(es)
 eip712_domain_name        = "GraphTallyCollector"
 eip712_chain_id           = 42161
 eip712_verifying_contract = "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e"
+aggregator_url            = "http://dispatch-gateway:8080"
 
 [database]
 url = "postgres://user:pass@localhost/dispatch"
@@ -370,6 +371,10 @@ supported = [1, 42161, 10, 8453]
 "42161" = "http://localhost:8546"
 "10"    = "http://localhost:8547"
 "8453"  = "http://localhost:8548"
+
+[collector]
+arbitrum_rpc_url      = "https://arb1.arbitrum.io/rpc"
+collect_interval_secs = 3600
 ```
 
 ### `gateway.toml` (dispatch-gateway)

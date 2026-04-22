@@ -13,6 +13,7 @@ Runs on the indexer alongside an Ethereum node. Validates TAP receipts, proxies 
 | GET | `/health` | Liveness check |
 | GET | `/version` | Version info |
 | GET | `/chains` | List of supported chains |
+| GET | `/block/{chain_id}` | Unauthenticated probe — returns current block number (used by gateways for QoS freshness scoring) |
 
 ---
 

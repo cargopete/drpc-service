@@ -29,14 +29,11 @@ eip712_domain_name = "GraphTallyCollector"
 # base_price_per_cu = 4000000000000
 
 [qos]
-probe_interval_secs  = 10
-latency_weight       = 0.30
-availability_weight  = 0.30
-freshness_weight     = 0.25
+probe_interval_secs = 10
 # How many providers to dispatch to concurrently (first response wins).
-concurrent_k         = 3
+concurrent_k        = 3
 # Score bonus for providers in the same region as this gateway instance.
-# region_bonus       = 0.15
+# region_bonus      = 0.15
 
 # ── Dynamic discovery ─────────────────────────────────────────────────────
 # When configured, the gateway polls the RPC network subgraph and updates the
