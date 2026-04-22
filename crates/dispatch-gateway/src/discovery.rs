@@ -66,7 +66,23 @@ pub async fn run(state: AppState) {
         tick.tick().await;
 
         match fetch_providers(&state.http_client, &cfg.subgraph_url).await {
-            Ok(providers) if !providers.is_empty() => {
+            Ok(mut providers) if !providers.is_empty() => {
+                // If a static provider entry exists for the same address, keep its
+                // endpoint — the static config is intentionally an internal override
+                // (e.g. a Docker hostname) that the gateway operator controls.
+                for p in &mut providers {
+                    if let Some(s) = state.config.providers.iter().find(|s| s.address == p.address) {
+                        if s.endpoint != p.endpoint {
+                            tracing::debug!(
+                                address = %p.address,
+                                static_endpoint = %s.endpoint,
+                                subgraph_endpoint = %p.endpoint,
+                                "using static endpoint override for provider"
+                            );
+                            p.endpoint = s.endpoint.clone();
+                        }
+                    }
+                }
                 let new_registry = Registry::from_config(&providers);
                 state.registry.store(Arc::new(new_registry));
                 tracing::info!(count = providers.len(), "provider registry refreshed from subgraph");
