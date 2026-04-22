@@ -14,7 +14,7 @@ service_provider_address = "0x..."    # your provider address
 operator_private_key      = "0x..."   # signs response attestations
 
 [tap]
-data_service_address      = "0x73846272813065c3e4efdb3fb82e0d128c8c2364"
+data_service_address      = "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078"
 authorized_senders        = ["0x..."] # gateway signer address(es)
 eip712_domain_name        = "TAP"
 eip712_chain_id           = 42161
@@ -45,7 +45,7 @@ region = "eu-west"   # optional — used for geographic routing bonus
 
 [tap]
 signer_private_key        = "0x..."   # signs TAP receipts
-data_service_address      = "0x73846272813065c3e4efdb3fb82e0d128c8c2364"
+data_service_address      = "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078"
 base_price_per_cu         = 4000000000000   # GRT wei per CU (~$40/M requests at $0.09 GRT)
 eip712_domain_name        = "TAP"
 eip712_chain_id           = 42161
@@ -61,7 +61,7 @@ requests_per_second = 100
 burst_size          = 200
 
 [discovery]
-subgraph_url  = "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.1.1"
+subgraph_url  = "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0"
 interval_secs = 60
 
 # Static providers (optional; used as fallback if subgraph is unavailable)
@@ -88,7 +88,7 @@ rpc_url = "https://eth-mainnet.example.com/YOUR_KEY"
 [arbitrum]
 rpc_url              = "https://arb1.arbitrum.io/rpc"
 signer_private_key   = "0x..."   # RPCDataService owner or authorised caller
-data_service_address = "0x73846272813065c3e4efdb3fb82e0d128c8c2364"
+data_service_address = "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078"
 ```
 
 ---

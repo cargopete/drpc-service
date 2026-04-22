@@ -2,7 +2,7 @@
 
 To join the Dispatch network as a provider you need:
 
-- ≥ 25,000 GRT staked on Arbitrum One
+- ≥ 10,000 GRT staked on Arbitrum One
 - An Ethereum node (full or archive) for each chain you want to serve
 - `dispatch-service` running alongside your node
 - An on-chain registration via `dispatch-indexer-agent` or directly via the contract
@@ -16,8 +16,8 @@ Provision your stake to `RPCDataService` on Arbitrum One:
 ```solidity
 HorizonStaking.provision(
     serviceProvider,                              // your address
-    0x73846272813065c3e4efdb3fb82e0d128c8c2364,  // RPCDataService
-    tokens,                                       // ≥ 25,000 GRT (in wei)
+    0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078,  // RPCDataService
+    tokens,                                       // ≥ 10,000 GRT (in wei)
     maxVerifierCut,                               // e.g. 100000 = 10%
     thawingPeriod                                 // ≥ 14 days in seconds
 )
@@ -41,7 +41,7 @@ service_provider_address = "0xYOUR_PROVIDER_ADDRESS"
 operator_private_key      = "0x..."   # signs on-chain collect() transactions
 
 [tap]
-data_service_address      = "0x73846272813065c3e4efdb3fb82e0d128c8c2364"
+data_service_address      = "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078"
 authorized_senders        = ["0xGATEWAY_SIGNER_ADDRESS"]
 eip712_chain_id           = 42161
 eip712_verifying_contract = "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e"
@@ -73,7 +73,7 @@ import { IndexerAgent } from "@dispatch/indexer-agent";
 
 const agent = new IndexerAgent({
   arbitrumRpcUrl: "https://arb1.arbitrum.io/rpc",
-  rpcDataServiceAddress: "0x73846272813065c3e4efdb3fb82e0d128c8c2364",
+  rpcDataServiceAddress: "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078",
   operatorPrivateKey: process.env.OPERATOR_KEY as `0x${string}`,
   providerAddress: "0xYOUR_PROVIDER_ADDRESS",
   endpoint: "https://rpc.your-domain.com",
