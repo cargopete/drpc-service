@@ -24,7 +24,7 @@ Inspired by the [Q3 2026 "Experimental JSON-RPC Data Service"](https://thegraph.
 | RAV aggregation (off-chain) | ✅ Working — gateway `/rav/aggregate` batches receipts into signed RAVs every 60s |
 | On-chain `collect()` | ✅ Working — GRT settles on-chain automatically every hour |
 | Provider on-chain registration | ✅ Confirmed — `registeredProviders[0xb43B...] = true` on Arbitrum One |
-| Multi-provider discovery | ❌ Gateway uses static provider config, not dynamic subgraph discovery |
+| Multi-provider discovery | ✅ Working — gateway polls subgraph every 60s, rebuilds registry dynamically |
 | Local demo | ✅ Working — full payment loop on Anvil with mock contracts |
 
 The full payment loop is working end-to-end on the live provider. Requests generate TAP receipts, the gateway aggregates them into RAVs every 60s, and the service calls `RPCDataService.collect()` every hour — pulling GRT from the consumer's escrow to the provider automatically.
@@ -33,12 +33,12 @@ The full payment loop is working end-to-end on the live provider. Requests gener
 dispatch-smoke
   endpoint   : http://167.235.29.213:7700
   chain_id   : 42161
-  data_svc   : 0x73846272813065c3e4Efdb3Fb82E0d128c8C2364
+  data_svc   : 0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078
   signer     : 0x7D14ae5f20cc2f6421317386Aa8E79e8728353d9
 
   [PASS] GET /health → 200 OK
-  [PASS] eth_blockNumber — returns current block → "0x1b1623cf" [95ms]
-  [PASS] eth_chainId — returns 0x61a9 (42161) → "0xa4b1" [58ms]
+  [PASS] eth_blockNumber — returns current block → "0x1b20574f" [95ms]
+  [PASS] eth_chainId — returns 0xa4b1 (42161) → "0xa4b1" [58ms]
   [PASS] eth_getBalance — returns balance at latest block (Standard) → "0x6f3a59e597c5342" [74ms]
   [PASS] eth_getBalance — historical block (Archive) → "0x0" [629ms]
   [PASS] eth_getLogs — recent block range → [{"address":"0xa62d...}] [61ms]
@@ -46,7 +46,7 @@ dispatch-smoke
   5 passed, 0 failed
 ```
 
-To become the next provider: stake ≥ 25,000 GRT on Arbitrum One, run `dispatch-service` pointing at an Ethereum node, and register via the indexer agent or directly via the contract.
+To become a provider: stake ≥ 10,000 GRT on Arbitrum One, provision it to `RPCDataService`, run `dispatch-service` alongside your Ethereum node, and register via the indexer agent. Full guide: [Running a Provider](docs/src/providers.md).
 
 ---
 
@@ -174,7 +174,7 @@ Install: `npm install /indexer-agent`
 On-chain contract inheriting Horizon's `DataService` + `DataServiceFees` + `DataServicePausable`.
 
 Key functions:
-- `register` — validates provision (≥ 25,000 GRT, ≥ 14-day thawing), stores provider metadata and `paymentsDestination`
+- `register` — validates provision (≥ 10,000 GRT, ≥ 14-day thawing), stores provider metadata and `paymentsDestination`
 - `setPaymentsDestination` — decouple the GRT payment recipient from the operator signing key
 - `startService` — activates provider for a `(chainId, capabilityTier)` pair
 - `stopService` / `deregister` — lifecycle management
