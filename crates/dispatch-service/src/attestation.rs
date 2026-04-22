@@ -49,3 +49,56 @@ pub fn message_hash(chain_id: u64, method: &str, params_json: &str, result_json:
     msg.extend_from_slice(result_hash.as_slice());
     keccak256(&msg)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k256::ecdsa::SigningKey;
+
+    fn test_key() -> SigningKey {
+        SigningKey::from_slice(&[0x42u8; 32]).unwrap()
+    }
+
+    #[test]
+    fn message_hash_is_deterministic() {
+        let h1 = message_hash(1, "eth_blockNumber", "[]", "\"0x1\"");
+        let h2 = message_hash(1, "eth_blockNumber", "[]", "\"0x1\"");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn message_hash_differs_by_chain_id() {
+        let h1 = message_hash(1,     "eth_blockNumber", "[]", "\"0x1\"");
+        let h2 = message_hash(42161, "eth_blockNumber", "[]", "\"0x1\"");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn message_hash_differs_by_method() {
+        let h1 = message_hash(1, "eth_blockNumber", "[]", "\"0x1\"");
+        let h2 = message_hash(1, "eth_chainId",    "[]", "\"0x1\"");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn sign_produces_valid_65_byte_hex_signature() {
+        let key  = test_key();
+        let addr = Address::default();
+        let att  = sign(&key, addr, 1, "eth_blockNumber", "[]", "\"0x1\"").unwrap();
+        // "0x" + 130 hex chars = 132 total
+        assert_eq!(att.signature.len(), 132);
+        assert!(att.signature.starts_with("0x"));
+        // v byte should be 27 or 28 (Ethereum convention)
+        let v = u8::from_str_radix(&att.signature[130..], 16).unwrap();
+        assert!(v == 27 || v == 28);
+    }
+
+    #[test]
+    fn different_messages_produce_different_signatures() {
+        let key  = test_key();
+        let addr = Address::default();
+        let att1 = sign(&key, addr, 1, "eth_blockNumber", "[]", "\"0x1\"").unwrap();
+        let att2 = sign(&key, addr, 1, "eth_chainId",    "[]", "\"0x2\"").unwrap();
+        assert_ne!(att1.signature, att2.signature);
+    }
+}

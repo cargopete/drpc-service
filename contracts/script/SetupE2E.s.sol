@@ -209,6 +209,13 @@ contract SetupE2E is Script {
             grt.mint(gateway, DEPOSIT);
             grt.approve(address(escrow), DEPOSIT);
             escrow.deposit(address(tallyCollector), provider, DEPOSIT);
+
+            // Also fund escrow keyed by the gatewaySigner address so that the
+            // e2e service (which uses validated.signer as the escrow payer) can
+            // verify balance for gateway-signed receipts.
+            grt.mint(gateway, DEPOSIT);
+            grt.approve(address(escrow), DEPOSIT);
+            escrow.depositTo(gatewaySigner, address(tallyCollector), provider, DEPOSIT);
             vm.stopBroadcast();
         }
 

@@ -21,6 +21,7 @@ const ENV = Object.fromEntries(
 
 let anvil: ChildProcess;
 let service: ChildProcess;
+let sideService: ChildProcess; // low credit_threshold + escrow check, authorized_senders = []
 let gateway: ChildProcess;
 
 /** Run a command to completion, streaming output, resolving on exit 0. */
@@ -94,6 +95,37 @@ eip712_domain_name = "GraphTallyCollector"
 eip712_chain_id = 31337
 eip712_verifying_contract = "${fixture.graphTallyCollector}"
 max_receipt_age_ns = 300000000000
+escrow_check_rpc_url = "http://127.0.0.1:8545"
+payments_escrow_address = "${fixture.paymentsEscrow}"
+
+[chains]
+supported = [31337]
+
+[chains.backends]
+"31337" = "http://127.0.0.1:8545"
+`;
+
+  // Side service: empty authorized_senders, low credit threshold, escrow check enabled.
+  // Used for testing escrow pre-check and credit limit independently of the main service.
+  const sideServiceCfg = `
+[server]
+host = "127.0.0.1"
+port = 7701
+
+[indexer]
+service_provider_address = "${fixture.providerAddress}"
+operator_private_key = "${fixture.providerKey}"
+
+[tap]
+data_service_address = "${fixture.rpcDataService}"
+authorized_senders = []
+eip712_domain_name = "GraphTallyCollector"
+eip712_chain_id = 31337
+eip712_verifying_contract = "${fixture.graphTallyCollector}"
+max_receipt_age_ns = 300000000000
+escrow_check_rpc_url = "http://127.0.0.1:8545"
+payments_escrow_address = "${fixture.paymentsEscrow}"
+credit_threshold = 8000000000000
 
 [chains]
 supported = [31337]
@@ -127,8 +159,9 @@ chains = [31337]
 capabilities = ["standard"]
 `;
 
-  fs.writeFileSync(path.join(TMP, "service.toml"), serviceCfg.trim());
-  fs.writeFileSync(path.join(TMP, "gateway.toml"), gatewayCfg.trim());
+  fs.writeFileSync(path.join(TMP, "service.toml"),      serviceCfg.trim());
+  fs.writeFileSync(path.join(TMP, "side-service.toml"), sideServiceCfg.trim());
+  fs.writeFileSync(path.join(TMP, "gateway.toml"),      gatewayCfg.trim());
 
   // 5. Build Rust binaries
   await run(CARGO, ["build", "--bins"], { cwd: ROOT });
@@ -148,6 +181,21 @@ capabilities = ["standard"]
   );
   await waitForPort(7700);
 
+  // 6b. Start side service (port 7701) — for escrow + credit limit tests
+  sideService = spawnProcess(
+    path.join(ROOT, "target/debug/dispatch-service"),
+    [],
+    {
+      cwd: ROOT,
+      env: {
+        ...ENV,
+        DISPATCH_CONFIG: path.join(TMP, "side-service.toml"),
+        RUST_LOG: "info",
+      },
+    }
+  );
+  await waitForPort(7701);
+
   // 7. Start dispatch-gateway
   gateway = spawnProcess(
     path.join(ROOT, "target/debug/dispatch-gateway"),
@@ -165,7 +213,8 @@ capabilities = ["standard"]
 }
 
 export async function teardown() {
-  if (gateway) await killProcess(gateway);
-  if (service) await killProcess(service);
-  if (anvil) await killProcess(anvil);
+  if (gateway)     await killProcess(gateway);
+  if (sideService) await killProcess(sideService);
+  if (service)     await killProcess(service);
+  if (anvil)       await killProcess(anvil);
 }

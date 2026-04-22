@@ -70,3 +70,29 @@ jobs:
           restore-keys: forge-
       - run: forge test -vv
         working-directory: contracts
+
+# ── E2E ───────────────────────────────────────────────────────────────────────
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install e2e dependencies
+        run: npm install
+        working-directory: e2e
+      - name: Build Rust binaries
+        run: cargo build --bins
+      - name: Run e2e suite
+        run: npm test
+        working-directory: e2e
+        env:
+          RUST_LOG: warn

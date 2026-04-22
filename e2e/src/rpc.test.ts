@@ -37,8 +37,9 @@ beforeAll(() => {
   fx = JSON.parse(process.env.E2E_FIXTURE!) as Fixture;
 });
 
-const SERVICE_URL = "http://127.0.0.1:7700";
-const GATEWAY_URL = "http://127.0.0.1:8080";
+const SERVICE_URL      = "http://127.0.0.1:7700";
+const SIDE_SERVICE_URL = "http://127.0.0.1:7701"; // low credit_threshold + escrow check, no sender whitelist
+const GATEWAY_URL      = "http://127.0.0.1:8080";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -584,6 +585,74 @@ describe("rav/aggregate", () => {
       body,
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ── escrow pre-check ──────────────────────────────────────────────────────────
+//
+// Uses the side service (port 7701): authorized_senders = [], escrow check enabled.
+// gatewaySignerKey has funded escrow; providerKey does not.
+
+describe("service: escrow pre-check", () => {
+  it("rejects a request when the signer has no escrow balance (402)", async () => {
+    // providerKey is an authorized signer (no whitelist) but has never funded escrow.
+    const receipt = await signReceipt(fx, { key: fx.providerKey });
+    const res = await fetch(`${SIDE_SERVICE_URL}/rpc/31337`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "TAP-Receipt": receipt },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
+    });
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as any;
+    expect(body.error.code).toBe(-32005);
+    expect(body.error.message).toContain("escrow");
+  });
+
+  it("serves a request when the signer has a funded escrow balance (200)", async () => {
+    // gatewaySignerKey has escrow funded in SetupE2E via depositTo.
+    const receipt = await signReceipt(fx, { key: fx.gatewaySignerKey });
+    const res = await fetch(`${SIDE_SERVICE_URL}/rpc/31337`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "TAP-Receipt": receipt },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 2 }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.result).toMatch(/^0x/);
+  });
+});
+
+// ── credit limit ──────────────────────────────────────────────────────────────
+//
+// Side service has credit_threshold = 8_000_000_000_000 (2 CUs at 4T GRT wei each).
+// After two successful requests the third is rejected with 402.
+
+describe("service: credit limit", () => {
+  it("blocks the third request once accumulated credit reaches the threshold", async () => {
+    // Use gatewayKey (not gatewaySignerKey) so this test has a clean credit slate
+    // independent of the escrow pre-check tests above which used gatewaySignerKey.
+    // gatewayAddress has funded escrow from Phase 4 of SetupE2E (the original deposit).
+    const makeRequest = async (id: number) =>
+      fetch(`${SIDE_SERVICE_URL}/rpc/31337`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "TAP-Receipt": await signReceipt(fx, { key: fx.gatewayKey, nonce: BigInt(id) * 100n }),
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id }),
+      });
+
+    const r1 = await makeRequest(10);
+    expect(r1.status).toBe(200); // served = 4T, under 8T threshold
+
+    const r2 = await makeRequest(11);
+    expect(r2.status).toBe(200); // served = 8T, still under threshold (check is >=)
+
+    const r3 = await makeRequest(12);
+    expect(r3.status).toBe(402); // served = 8T >= 8T threshold → blocked
+    const body = (await r3.json()) as any;
+    expect(body.error.code).toBe(-32005);
+    expect(body.error.message).toContain("credit");
   });
 });
 

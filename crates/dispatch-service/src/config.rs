@@ -1,7 +1,23 @@
 use alloy_primitives::Address;
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
+
+/// Deserialize a u128 from either a TOML integer (i64 range) or a decimal string.
+/// TOML doesn't have a u128 type; values above i64::MAX must be quoted strings.
+fn de_u128<'de, D: Deserializer<'de>>(d: D) -> Result<u128, D::Error> {
+    use serde::de::Error;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Int(i64),
+        Str(String),
+    }
+    match Raw::deserialize(d)? {
+        Raw::Int(n) => u128::try_from(n).map_err(|_| D::Error::custom("negative u128")),
+        Raw::Str(s) => s.trim().replace('_', "").parse::<u128>().map_err(|e| D::Error::custom(e)),
+    }
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -23,7 +39,7 @@ pub struct CollectorConfig {
     pub collect_interval_secs: u64,
     /// Skip RAVs whose value_aggregate is below this threshold (GRT wei).
     /// Avoids spending gas on dust. Default: 0 (collect everything).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_u128")]
     pub min_collect_value: u128,
 }
 
@@ -75,7 +91,7 @@ pub struct TapConfig {
     pub aggregation_interval_secs: u64,
     /// Maximum unconfirmed GRT wei a consumer may accumulate before being blocked.
     /// Resets after a successful on-chain collect(). Default: 0.1 GRT.
-    #[serde(default = "default_credit_threshold")]
+    #[serde(default = "default_credit_threshold", deserialize_with = "de_u128")]
     pub credit_threshold: u128,
     /// PaymentsEscrow contract address on Arbitrum One.
     /// Defaults to the live Horizon deployment.
