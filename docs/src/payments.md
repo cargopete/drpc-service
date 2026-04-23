@@ -7,15 +7,18 @@ Dispatch uses [GraphTally (TAP v2)](https://github.com/graphprotocol/graph-impro
 ## End-to-end flow
 
 ```
-1. Consumer deposits GRT into PaymentsEscrow for the gateway signer (or provider)
-2. Per request: gateway signs a TAP receipt (EIP-712 ECDSA, random nonce, value in GRT wei)
-3. Receipt sent in TAP-Receipt header alongside JSON-RPC request
-4. dispatch-service validates signature, persists receipt to PostgreSQL
-5. dispatch-service TAP aggregator batches receipts → sends to gateway's /rav/aggregate endpoint
-6. Gateway returns a signed RAV (Receipt Aggregate Voucher); service upserts it to tap_ravs
-7. dispatch-service collector submits RAV on-chain every hour: RPCDataService.collect()
+1. Consumer deposits GRT into PaymentsEscrow (keyed by their own address as payer)
+2. Consumer includes X-Consumer-Address header on every gateway request
+3. Per request: gateway signs a TAP receipt (EIP-712 ECDSA, random nonce, CU-weighted value)
+   — consumer address is encoded in receipt metadata so the correct escrow is charged
+4. Receipt sent in TAP-Receipt header alongside JSON-RPC request to dispatch-service
+5. dispatch-service extracts consumer address from metadata, checks their escrow balance,
+   validates signature, persists receipt to PostgreSQL
+6. dispatch-service TAP aggregator batches receipts per consumer → sends to /rav/aggregate
+7. Gateway returns a signed RAV (Receipt Aggregate Voucher) with payer = consumer address
+8. dispatch-service collector submits RAV on-chain every hour: RPCDataService.collect()
                                → GraphTallyCollector (verifies EIP-712, tracks cumulative value)
-                               → PaymentsEscrow (draws GRT from escrow)
+                               → PaymentsEscrow (draws GRT from consumer's escrow)
                                → GraphPayments (distributes: protocol tax → delegators → provider)
                                → GRT lands at paymentsDestination
 ```

@@ -45,6 +45,18 @@ New providers start with a neutral score and receive a geographic bonus until la
 
 ---
 
+## Consumer address requirement
+
+Every request to the gateway must include an `X-Consumer-Address` header containing the consumer's Ethereum address:
+
+```
+X-Consumer-Address: 0xYOUR_ADDRESS
+```
+
+Missing or invalid header → `402 Payment Required`. The address must have GRT deposited in `PaymentsEscrow` or the provider will reject the request.
+
+---
+
 ## TAP receipt issuance
 
 The gateway signs a fresh EIP-712 TAP receipt for every request:
@@ -54,6 +66,9 @@ The gateway signs a fresh EIP-712 TAP receipt for every request:
 - `nonce`: random `uint64`
 - `value`: `CU_weight × base_price_per_cu` in GRT wei
 - `timestamp_ns`: current Unix nanoseconds
+- `metadata`: first 20 bytes = consumer address (from `X-Consumer-Address`)
+
+The consumer address in `metadata` is how `dispatch-service` determines whose escrow to check and how the RAV's `payer` field is set — ensuring on-chain `collect()` debits the correct account.
 
 The receipt is sent to `dispatch-service` in the `TAP-Receipt` HTTP header.
 

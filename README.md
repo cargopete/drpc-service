@@ -19,6 +19,7 @@ Inspired by the [Q3 2026 "Experimental JSON-RPC Data Service"](https://thegraph.
 | Subgraph | ✅ Live on The Graph Studio |
 | npm packages | ✅ Published (`@lodestar-dispatch/consumer-sdk`, `@lodestar-dispatch/indexer-agent`) |
 | Active providers | ✅ **1** — `https://rpc.cargopete.com` (Arbitrum One, Standard + Archive) |
+| Consumer-pays escrow | ✅ Enforced — `X-Consumer-Address` required; no free queries |
 | Receipt signing & validation | ✅ Working — every request carries a signed EIP-712 TAP receipt |
 | Receipt persistence | ✅ Working — stored in `tap_receipts` table in postgres |
 | RAV aggregation (off-chain) | ✅ Working — gateway `/rav/aggregate` batches receipts into signed RAVs every 60s |
@@ -31,7 +32,7 @@ The full payment loop is working end-to-end on the live provider. Requests gener
 
 ```
 dispatch-smoke
-  endpoint   : http://167.235.29.213:7700
+  endpoint   : https://rpc.cargopete.com
   chain_id   : 42161
   data_svc   : 0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078
   signer     : 0x7D14ae5f20cc2f6421317386Aa8E79e8728353d9
@@ -60,6 +61,7 @@ Consumer (dApp)
    │
    └── via dispatch-gateway (managed, centralised)
          QoS-scored selection, TAP receipt signing
+         Requires X-Consumer-Address header + funded escrow
    │
    │  POST /rpc/{chain_id}  (or X-Chain-Id header on /rpc)
    │  TAP-Receipt: { signed EIP-712 receipt }
@@ -145,7 +147,8 @@ Key responsibilities:
 - Select top-k providers via weighted random sampling, dispatch concurrently, return first valid response
 - **JSON-RPC batch** — concurrent per-item dispatch, per-item error isolation
 - **WebSocket proxy** — bidirectional forwarding for real-time subscriptions
-- Create and sign a fresh TAP receipt per request (EIP-712, random nonce, CU-weighted value)
+- **Require `X-Consumer-Address` header** — encodes consumer address into receipt metadata so GRT is drawn from the consumer's own escrow; returns `402` if missing or invalid
+- Create and sign a fresh TAP receipt per request (EIP-712, random nonce, CU-weighted value, consumer address in metadata)
 - **Dynamic discovery** — polls the RPC network subgraph; rebuilds registry on each poll
 - **Per-IP rate limiting** — token-bucket via `governor` (configurable RPS + burst)
 - **Prometheus metrics** — `dispatch_requests_total`, `dispatch_request_duration_seconds`
@@ -228,8 +231,8 @@ Subgraph: `https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0`
 Fires real TAP-signed JSON-RPC requests directly at a provider and validates responses.
 
 ```bash
-DISPATCH_ENDPOINT=http://167.235.29.213:7700 \
-DISPATCH_SIGNER_KEY=<gateway-signer-key> \
+DISPATCH_ENDPOINT=https://rpc.cargopete.com \
+DISPATCH_SIGNER_KEY=<authorized-signer-key> \
 DISPATCH_PROVIDER_ADDRESS=0xb43B2CCCceadA5292732a8C58ae134AdEFcE09Bb \
 cargo run --bin dispatch-smoke
 ```
@@ -342,6 +345,8 @@ Configuration via environment variables:
 ```bash
 npm install @lodestar-dispatch/consumer-sdk
 ```
+
+The live gateway is `https://gateway.lodestar-dashboard.com`. All requests require an `X-Consumer-Address` header and a funded GRT escrow — see [docs/consumers.md](docs/src/consumers.md).
 
 ```typescript
 import { DISPATCHClient } from "@lodestar-dispatch/consumer-sdk";

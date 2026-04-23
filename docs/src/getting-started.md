@@ -1,14 +1,19 @@
 # Getting Started
 
-## Hit the live network (quickest)
+## Hit the live network
 
-The gateway is live. No setup, no key, no GRT — just a standard JSON-RPC call:
+The gateway is live at `https://gateway.lodestar-dashboard.com`. Every request must include your Ethereum address in the `X-Consumer-Address` header — the gateway uses it to charge GRT from your escrow on-chain.
 
 ```bash
-curl -s -X POST http://167.235.29.213:8080/rpc/42161 \
+curl -s -X POST https://gateway.lodestar-dashboard.com/rpc/42161 \
   -H "Content-Type: application/json" \
+  -H "X-Consumer-Address: 0xYOUR_ADDRESS" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
+
+No `X-Consumer-Address` header → `402 Payment Required`. No funded escrow → the provider rejects the request.
+
+Fund your escrow at [lodestar-dashboard.com/dispatch](https://lodestar-dashboard.com/dispatch) before making requests. See [Payments](payments.md) for the full escrow setup.
 
 Every response carries an `x-drpc-attestation` header — an ECDSA signature from the provider over `keccak256(chainId || method || params || response || blockHash)`. You can verify this with the consumer SDK (see [Using the Network](consumers.md)).
 
@@ -16,12 +21,11 @@ Every response carries an `x-drpc-attestation` header — an ECDSA signature fro
 
 ## Smoke test a live provider
 
-Fires real TAP-signed JSON-RPC requests directly at a provider endpoint, bypassing the gateway. Validates that receipts are accepted, responses are correct, and attestations are present.
+Fires real TAP-signed JSON-RPC requests directly at the provider endpoint (bypasses the gateway). Requires a key that is in the provider's `authorized_senders` list.
 
 ```bash
-# Full validated run against the live provider
-DISPATCH_ENDPOINT=http://167.235.29.213:7700 \
-DISPATCH_SIGNER_KEY=<gateway-signer-key> \
+DISPATCH_ENDPOINT=https://rpc.cargopete.com \
+DISPATCH_SIGNER_KEY=<authorized-signer-key> \
 DISPATCH_PROVIDER_ADDRESS=0xb43B2CCCceadA5292732a8C58ae134AdEFcE09Bb \
 cargo run --bin dispatch-smoke
 ```

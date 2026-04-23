@@ -1,29 +1,31 @@
 # Using the Network
 
-Two ways to consume the Dispatch network: hit the gateway directly (zero setup) or use the consumer SDK (trustless, signs receipts locally).
+Two ways to consume the Dispatch network: hit the gateway directly or use the consumer SDK (trustless, signs receipts locally). Both require GRT in your escrow — there are no free queries.
 
 ---
 
 ## Via the Gateway
 
-The gateway handles provider selection and TAP receipt signing. It exposes a standard JSON-RPC interface — point any Ethereum library at it.
+The gateway handles provider selection and TAP receipt signing. You must include your Ethereum address in every request via the `X-Consumer-Address` header — the gateway encodes it into the TAP receipt so GRT is drawn from **your** escrow on-chain, not the gateway's.
 
-**Live gateway:** `http://167.235.29.213:8080`
+**Live gateway:** `https://gateway.lodestar-dashboard.com`
 
 ```bash
 # curl
-curl -s -X POST http://167.235.29.213:8080/rpc/42161 \
+curl -s -X POST https://gateway.lodestar-dashboard.com/rpc/42161 \
   -H "Content-Type: application/json" \
+  -H "X-Consumer-Address: 0xYOUR_ADDRESS" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 
 # Check the attestation header
-curl -si -X POST http://167.235.29.213:8080/rpc/42161 \
+curl -si -X POST https://gateway.lodestar-dashboard.com/rpc/42161 \
   -H "Content-Type: application/json" \
+  -H "X-Consumer-Address: 0xYOUR_ADDRESS" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
   | grep -E "x-drpc-attestation|result"
 ```
 
-With ethers.js or viem, just swap in the gateway URL:
+With ethers.js or viem:
 
 ```typescript
 import { createPublicClient, http } from "viem";
@@ -31,11 +33,17 @@ import { arbitrum } from "viem/chains";
 
 const client = createPublicClient({
   chain: arbitrum,
-  transport: http("http://167.235.29.213:8080/rpc/42161"),
+  transport: http("https://gateway.lodestar-dashboard.com/rpc/42161", {
+    fetchOptions: {
+      headers: { "X-Consumer-Address": "0xYOUR_ADDRESS" },
+    },
+  }),
 });
 
 const block = await client.getBlockNumber();
 ```
+
+Missing the `X-Consumer-Address` header returns `402 Payment Required`. Requests from addresses with no funded escrow are rejected by the provider. See [Funding the escrow](#funding-the-escrow) below.
 
 **Routes:**
 ```
@@ -158,7 +166,7 @@ const signed = await signReceipt(
 
 ## Funding the escrow
 
-Before GRT flows to providers you need to deposit into `PaymentsEscrow` on Arbitrum One. This is only required for the proxy and consumer SDK (direct provider access) — the gateway manages its own escrow.
+Before GRT flows to providers you need to deposit into `PaymentsEscrow` on Arbitrum One. This is required regardless of which access method you use — the gateway, proxy, and consumer SDK all charge from your own escrow.
 
 ### Via the Lodestar dashboard (easiest)
 
