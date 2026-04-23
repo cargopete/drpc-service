@@ -16,7 +16,13 @@ signer_private_key = "0xYOUR_SIGNER_PRIVATE_KEY"
 data_service_address = "0x0000000000000000000000000000000000000000"
 
 # GRT wei charged per compute unit.
-# Default ≈ 4e-6 GRT/CU → $40/M requests at $0.09/GRT, ~10 CU/request average.
+# Default = 4e-6 GRT/CU (4_000_000_000_000 / 1e18). At $0.09/GRT: $0.36/M CUs per provider.
+# Effective consumer cost is 3× (gateway dispatches to 3 providers concurrently):
+#   eth_blockNumber ( 1 CU): $1.08/M calls   (Alchemy: $4.50/M)
+#   eth_getBalance  ( 5 CU): $5.40/M calls   (Alchemy: $4.50/M)
+#   eth_call        (10 CU): $10.80/M calls  (Alchemy: $11.70/M)
+#   eth_getLogs     (20 CU): $21.60/M calls  (Alchemy: $33.75/M)
+# Break-even vs Alchemy on eth_call at ~$0.10/GRT. See config.rs pricing_math test.
 base_price_per_cu = 4_000_000_000_000
 
 eip712_domain_name = "TAP"

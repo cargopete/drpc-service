@@ -154,7 +154,7 @@ fn default_capabilities() -> Vec<CapabilityTier> {
 fn default_region_bonus() -> f64 { 0.15 }
 fn default_host() -> String { "0.0.0.0".to_string() }
 fn default_port() -> u16 { 8080 }
-fn default_base_price_per_cu() -> u128 { 4_000_000_000_000 } // 4e-6 GRT per CU
+fn default_base_price_per_cu() -> u128 { 4_000_000_000_000 } // 4e-6 GRT/CU; see pricing_math test
 fn default_tap_chain_id() -> u64 { 42161 }
 fn default_tap_verifying_contract() -> Address {
     "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e".parse().unwrap()
@@ -165,3 +165,44 @@ fn default_quorum_k() -> usize { 3 }
 fn default_discovery_interval_secs() -> u64 { 60 }
 fn default_rps() -> u32 { 100 }
 fn default_burst() -> u32 { 20 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pricing proof for default base_price_per_cu = 4_000_000_000_000 GRT wei/CU.
+    ///
+    /// GRT has 18 decimal places → 4e12 / 1e18 = 4e-6 GRT per CU.
+    /// The gateway dispatches to 3 providers concurrently; all receive a receipt.
+    /// Effective consumer cost = per-provider receipt × 3.
+    ///
+    /// At $0.09/GRT:
+    ///   eth_blockNumber ( 1 CU):  $1.08/M calls  (Alchemy: $4.50/M)
+    ///   eth_getBalance  ( 5 CU):  $5.40/M calls  (Alchemy: $4.50/M)
+    ///   eth_call        (10 CU): $10.80/M calls  (Alchemy: $11.70/M)
+    ///   eth_getLogs     (20 CU): $21.60/M calls  (Alchemy: $33.75/M)
+    ///
+    /// Break-even vs Alchemy on eth_call: ~$0.10/GRT.
+    #[test]
+    fn pricing_math() {
+        let base = default_base_price_per_cu();
+        assert_eq!(base, 4_000_000_000_000_u128);
+
+        // 1M CUs in GRT wei = exactly 4 GRT (4×10^18 wei)
+        assert_eq!(base * 1_000_000, 4_000_000_000_000_000_000_u128);
+
+        // Per-method receipt values (GRT wei, single provider)
+        assert_eq!(1_u128  * base,  4_000_000_000_000_u128); // eth_blockNumber
+        assert_eq!(5_u128  * base, 20_000_000_000_000_u128); // eth_getBalance
+        assert_eq!(10_u128 * base, 40_000_000_000_000_u128); // eth_call
+        assert_eq!(20_u128 * base, 80_000_000_000_000_u128); // eth_getLogs
+
+        // USD cost per million calls (×3 concurrent, $0.09/GRT):
+        // receipt_wei × 3 × 1e6 × $0.09 / 1e18
+        let factor: f64 = 3.0 * 1_000_000.0 * 0.09 / 1e18;
+        let eth_call_usd_per_m     = 40_000_000_000_000_u128 as f64 * factor;
+        let eth_get_logs_usd_per_m = 80_000_000_000_000_u128 as f64 * factor;
+        assert!((eth_call_usd_per_m     - 10.80).abs() < 0.01, "eth_call: ${eth_call_usd_per_m:.2}/M");
+        assert!((eth_get_logs_usd_per_m - 21.60).abs() < 0.01, "eth_getLogs: ${eth_get_logs_usd_per_m:.2}/M");
+    }
+}

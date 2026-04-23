@@ -1,4 +1,4 @@
-# RFC: Dispatch Data Service on The Graph Horizon
+# RFC: Dispatch — A JSON-RPC Data Service on The Graph Horizon
 
 **Status:** Implemented (see codebase)
 **Target:** Q3 2026 experimental window
@@ -9,492 +9,281 @@
 
 ## 1. Summary
 
-This RFC describes a decentralised JSON-RPC (Dispatch) data service built on The Graph Protocol's Horizon framework. It defines the on-chain contract interface, off-chain indexer service architecture, payment model, verification framework, and gateway integration required to serve Ethereum-compatible JSON-RPC requests under Horizon's economic security model.
+Dispatch is a decentralised JSON-RPC (Ethereum-compatible RPC) data service built on The Graph Protocol's Horizon framework. Providers stake GRT, register to serve specific chains, and earn micropayments per request. Consumers interact through a gateway that handles provider selection, payment, and quality scoring — or directly via the consumer SDK.
 
-The Graph's Horizon upgrade (mainnet December 2025, GIP-0066) explicitly supports this as the second production data service after SubgraphService. The 2026 Technical Roadmap names an "Experimental JSON-RPC Data Service" for Q3 2026.
+The central challenge Dispatch shares with every decentralised RPC protocol is that JSON-RPC responses have no canonical on-chain truth. You cannot prove on-chain that `eth_call` returned the right value. This RFC describes how Dispatch makes dishonesty unprofitable and detectable despite that limitation, and is explicit where economic incentives end and cryptographic guarantees would need to begin.
 
----
-
-## 2. Background
-
-### 2.1 Horizon architecture
-
-Horizon restructures the Graph Protocol into three independent layers:
-
-**HorizonStaking** — provisions assign stake to a specific `(serviceProvider, dataService)` pair. The data service contract is the slashing authority for that provision.
-
-**GraphPayments + PaymentsEscrow** — generic micropayment infrastructure. GraphTally (TAP v2) handles off-chain receipt accumulation and on-chain RAV redemption. `valueAggregate` in a RAV is cumulative and never resets; the collector tracks previously collected amounts to calculate deltas.
-
-**DataService framework** — abstract Solidity contracts (`DataService`, `DataServiceFees`, `DataServicePausable`) providing composable building blocks. Any developer can deploy a new data service permissionlessly; governance approval is only required for GRT issuance rewards.
-
-### 2.2 IDataService interface
-
-```solidity
-interface IDataService {
-    function register(address serviceProvider, bytes calldata data) external;
-    function deregister(address serviceProvider, bytes calldata data) external;
-    function startService(address serviceProvider, bytes calldata data) external;
-    function stopService(address serviceProvider, bytes calldata data) external;
-    function collect(address serviceProvider, bytes calldata data) external returns (uint256);
-    function slash(address serviceProvider, bytes calldata data) external;
-    function acceptProvisionPendingParameters(address serviceProvider, bytes calldata data) external;
-}
-```
-
-Lifecycle: `register → startService → [collect]* → stopService → deregister`
-
-### 2.3 GraphTally payment lifecycle
-
-1. Gateway deposits GRT into `PaymentsEscrow` per service provider
-2. Per query: gateway sends signed TAP receipt (EIP-712 ECDSA; nonce = random uint64; value in GRT wei)
-3. Receipts accumulate off-chain in indexer's PostgreSQL
-4. TAP agent batches receipts, sends to gateway's `tap_aggregator` endpoint (JSON-RPC), receives signed RAV
-5. RAV submitted on-chain: `DataService.collect()` → `GraphTallyCollector` → `PaymentsEscrow` → `GraphPayments`
-6. Distribution: protocol tax → data service cut → delegator cut → service provider
-
-**EIP-712 domain** (all Horizon contracts, Arbitrum One):
-```
-name: protocol-configured
-version: "1"
-chainId: 42161
-verifyingContract: 0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e  // GraphTallyCollector
-```
-
-### 2.4 TAP v2 receipt/RAV types
-
-```rust
-struct Receipt {
-    address data_service;       // RPCDataService address
-    address service_provider;   // Indexer address
-    uint64  timestamp_ns;       // Unix nanoseconds
-    uint64  nonce;              // Random uint64
-    uint128 value;              // GRT wei
-    bytes   metadata;           // Optional: CU count, method hash
-}
-
-struct ReceiptAggregateVoucher {
-    address data_service;
-    address service_provider;
-    uint64  timestamp_ns;       // Max timestamp from batch
-    uint128 value_aggregate;    // Cumulative, monotonically increasing
-    bytes   metadata;
-}
-```
+This is an independent community implementation of the Horizon data service pattern, fully compatible with Horizon's deployed contracts on Arbitrum One, but not affiliated with The Graph Foundation.
 
 ---
 
-## 3. Deployment model
+## 2. Horizon integration
 
-### 3.1 Unit of service
+### 2.1 Provisions
 
-Unlike subgraphs (unique data transformations), RPC is generic per chain. The unit of service is a `(chainId, capabilityTier)` pair:
+A provider's GRT stake is allocated to a data service via a *provision* — a record in HorizonStaking that binds a `(serviceProvider, dataService)` pair. The data service contract is the exclusive slashing authority over that provision. This design allows multiple independent data services to coexist with their own economic rules, rather than sharing a single global staking model.
 
-| Tier | Value | Methods | Infrastructure |
-|---|---|---|---|
-| Standard | 0 | All standard methods, last 128 blocks | Full node |
-| Archive | 1 | Full historical state | Archive node |
-| Debug/Trace | 2 | `debug_*`, `trace_*` | Full/archive + debug APIs |
-| WebSocket | 3 | `eth_subscribe`, real-time | Full node + WS |
+For Dispatch, a provider's single provision covers all chains and tiers they serve. Stake is not split per chain.
 
-A provider's provisioned stake is shared across all chains they serve. No per-chain stake splitting.
+### 2.2 GraphTally payments (TAP v2)
 
-### 3.2 Phase 1 scope
+GraphTally moves payment trust off-chain. The flow is:
 
-Chains: Ethereum mainnet (1), Arbitrum One (42161), Optimism (10), Base (8453).
-Tiers: Standard only.
-Methods: Tier 1 Merkle-provable + essential Tier 2 quorum-verified (see §5).
+- Consumers pre-fund an escrow in `PaymentsEscrow`.
+- Per request, the gateway signs a TAP receipt — an EIP-712 message containing the data service address, the provider's address, a random nonce, a GRT amount, and a nanosecond timestamp. The receipt is sent to the provider alongside the request.
+- Providers accumulate receipts off-chain, then aggregate them into a Receipt Aggregate Voucher (RAV): a single signature over the sum of all receipt values. The `value_aggregate` field is monotonically increasing — it represents the cumulative total, not a delta.
+- The provider submits the RAV on-chain via `RPCDataService.collect()`. The chain pulls the delta (new total minus previously redeemed) from escrow and pays out.
 
----
+The monotonic `value_aggregate` invariant means: (1) the provider can only ever claim *more*, never less; (2) partial aggregation is safe — include all receipts, not just the latest batch; (3) there is no receipt-level on-chain settlement, only periodic RAV settlement.
 
-## 4. On-chain contract: RPCDataService
+### 2.3 DataService framework
 
-### 4.1 Contract structure
-
-```solidity
-contract RPCDataService is DataService, DataServicePausable, DataServiceFees {
-
-    struct ChainConfig {
-        bool     enabled;
-        uint256  minProvisionTokens;   // Per-chain minimum (e.g. 25,000 GRT)
-        string   metadata;
-    }
-
-    struct ChainRegistration {
-        uint64  chainId;
-        uint8   capabilityTier;
-        string  endpoint;
-        bool    active;
-    }
-
-    // Governance-controlled allowlist
-    mapping(uint256 => ChainConfig) public supportedChains;
-
-    // Provider state
-    mapping(address => bool)                  public registeredProviders;
-    mapping(address => ChainRegistration[])   public providerChains;
-    mapping(address => address)               public paymentsDestination; // provider → payment recipient
-
-    // Protocol parameters
-    uint256 public minimumProvisionTokens;   // Default: 25,000 GRT
-    uint64  public minimumThawingPeriod;     // Default: 14 days
-    uint256 public stakeToFeesRatio;         // Default: 5
-
-    function register(address serviceProvider, bytes calldata data) external override;
-    function deregister(address serviceProvider, bytes calldata data) external override;
-    function startService(address serviceProvider, bytes calldata data) external override;
-    function stopService(address serviceProvider, bytes calldata data) external override;
-    function collect(address serviceProvider, bytes calldata data) external override returns (uint256);
-    function slash(address serviceProvider, bytes calldata data) external override;     // EIP-1186 MPT fraud proof
-    function acceptProvisionPendingParameters(address sp, bytes calldata) external override;
-    function setPaymentsDestination(address destination) external;   // Decouple payment recipient from operator key
-
-    // Governance
-    function addChain(uint256 chainId, ChainConfig calldata config) external onlyGovernor;
-    function removeChain(uint256 chainId) external onlyGovernor;
-}
-```
-
-> **Learnt from SubstreamsDataService:** The `paymentsDestination` mapping decouples the service provider's on-chain identity (operator key, used for signing) from the address that receives collected GRT. Operators running multiple services or using cold-storage payment wallets need this separation. SubstreamsDataService implements it as a simple `setPaymentsDestination()` call post-registration.
-
-### 4.2 Function specifications
-
-**register(serviceProvider, data)**
-- `data`: `abi.encode(string endpoint, string geoHash, address paymentsDestination)`
-- Validates: provision ≥ `minimumProvisionTokens`, thawing period ≥ `minimumThawingPeriod`
-- Stores provider metadata; sets `paymentsDestination[serviceProvider]` (defaults to `serviceProvider` if zero address)
-- Emits `ServiceProviderRegistered`
-
-**setPaymentsDestination(destination)**
-- Callable by a registered provider (or their authorised operator) at any time
-- Updates `paymentsDestination[msg.sender]` — takes effect on the next `collect()` call
-- Emits `PaymentsDestinationSet(serviceProvider, destination)`
-
-**startService(serviceProvider, data)**
-- `data`: `abi.encode(uint64 chainId, uint8 tier, string endpoint)`
-- Validates: `chainId` in `supportedChains`, provider registered
-- Pushes to `providerChains[serviceProvider]`
-- Emits `ServiceStarted`
-
-**stopService(serviceProvider, data)**
-- `data`: `abi.encode(uint64 chainId, uint8 tier)`
-- Sets `active = false` on matching registration
-- Emits `ServiceStopped`
-
-**collect(serviceProvider, data)**
-- `data`: ABI-encoded `(SignedRAV, uint256 tokensToCollect)`
-- Reverts with `InvalidPaymentType` if `paymentType != QueryFee` — explicit enforcement, not silent pass-through (learnt from SubstreamsDataService)
-- Calls `GraphTallyCollector.collect()` to verify EIP-712 sig and pull from escrow
-- Routes collected GRT to `paymentsDestination[serviceProvider]` (not necessarily `serviceProvider`)
-- Locks `fees * stakeToFeesRatio` via `_createStakeClaim()` with `releaseAt = block.timestamp + thawingPeriod`
-- Routes through `GraphPayments` for distribution
-- Returns tokens collected
-
-**slash(serviceProvider, data)**
-- `data`: ABI-encoded `Tier1FraudProof` — block hash, account, dispute type (Balance/Nonce/Storage), claimed value, EIP-1186 account + storage proofs, challenger address
-- Looks up trusted state root via `trustedStateRoots[blockHash]` (populated by `dispatch-oracle`)
-- Verifies proof via `StateProofVerifier.verifyAccount` / `verifyStorage` (OZ MPT library)
-- Calls `HorizonStaking.slash(serviceProvider, slashAmount, verifierCut, challenger)` — 50% bounty to challenger
-
-### 4.3 Provision parameters
-
-| Parameter | Value |
-|---|---|
-| Minimum provision | 25,000 GRT per chain |
-| Minimum thawing period | 14 days |
-| stakeToFeesRatio | 5 |
-| Max slash percentage | 10% (recommended 2.5%) |
-| maxVerifierCut | Set by service provider, ≤ protocol max |
-
-### 4.4 Deployment
-
-- Deploy on Arbitrum One (all Horizon contracts live here)
-- Constructor receives `GraphDirectory` immutable address book
-- Governance role: multisig or timelock for chain allowlist management
+`RPCDataService` inherits three Horizon base contracts: `DataService` (provision utilities and GraphDirectory), `DataServiceFees` (stake-backed fee locking), and `DataServicePausable` (emergency stop). The contract does not deploy these — they are composed in as library contracts. Any developer can do the same permissionlessly; GRT issuance rewards require Graph governance approval separately.
 
 ---
 
-## 5. Verification framework
+## 3. Unit of service
 
-RPC response verification is fundamentally different from subgraph POIs. A three-tier model is used.
+Unlike subgraphs, RPC is generic — any provider serving Ethereum mainnet returns the same data. The unit of service is a `(chainId, capabilityTier)` pair:
 
-### Tier 1 — Merkle-provable methods
-
-Methods where correctness is verifiable via Ethereum's Merkle-Patricia trie:
-
-| Method | Proof source | Notes |
+| Tier | Methods | Infrastructure required |
 |---|---|---|
-| `eth_getBalance` | `accountProof` → balance field | Single `eth_getProof` call |
-| `eth_getTransactionCount` | `accountProof` → nonce field | Same proof |
-| `eth_getStorageAt` | `storageProof` → value | |
-| `eth_getCode` | `accountProof` → codeHash; verify `keccak256(code) == codeHash` | Code fetched separately |
-| `eth_getProof` | Self-verifying | Returns the proof itself |
-| `eth_getBlockByHash` | `keccak256(RLP(header)) == hash` | Header-verifiable |
-| `eth_getBlockByNumber` | Same once hash resolved | |
+| Standard | All standard methods, last ~128 blocks | Full node |
+| Archive | Full historical state at any block | Archive node |
+| Debug/Trace | `debug_*` and `trace_*` methods | Full/archive node with debug APIs |
 
-**EIP-1186 verification algorithm:**
-1. Confirm `keccak256(RLP(header)) == trustedBlockHash`
-2. Walk `accountProof` from header's `stateRoot` to leaf keyed by `keccak256(address)`
-3. Verify extracted account RLP matches `[nonce, balance, storageHash, codeHash]`
-4. For storage: walk `storageProof` from `storageHash` to leaf keyed by `keccak256(storageKey)`
+A provider activates service per `(chainId, tier)` independently. One archive node can advertise both Standard and Archive on the same chain from a single registration. WebSocket (`eth_subscribe`) is not a separate tier — it is a transport, available from any Standard provider.
 
-**Performance:** Proofs are 500B–5KB, generation takes 5–20ms. Default: sign all responses, attach proofs on-demand or during random spot-checks. NOT on every request.
-
-**Fraud proof slashing:** Challenger submits a `Tier1FraudProof` with the disputed block hash, EIP-1186 account/storage proofs, and claimed vs actual value. On-chain arbitration verifies via `StateProofVerifier.sol`. If valid: 10,000 GRT slashed, 50% to challenger. `dispatch-oracle` maintains the `trustedStateRoots` mapping that makes verification possible.
-
-**Competitive differentiation:** No existing Dispatch protocol (Lava, Pocket, DISPATCH, Fluence) uses Merkle proofs. This is a significant differentiator.
-
-### Tier 2 — Quorum-verified methods
-
-Methods that are deterministic but require EVM re-execution to verify:
-
-| Method | Priority |
-|---|---|
-| `eth_chainId`, `net_version` | P0 (static; trivially verified) |
-| `eth_blockNumber` | P0 (quorum + beacon chain comparison) |
-| `eth_sendRawTransaction` | P0 (self-authenticated; just relay) |
-| `eth_getTransactionReceipt` | P0 (quorum; future: receipt trie proof) |
-| `eth_call` | P1 (quorum; future: EVM re-execution) |
-| `eth_estimateGas` | P1 (quorum sufficient; advisory) |
-| `eth_gasPrice` | P1 (derivable from block headers) |
-| `eth_getLogs` | P1 (quorum; future: bloom filter + receipt proof) |
-| `eth_getTransactionByHash` | P1 (quorum; future: tx trie proof) |
-| `eth_feeHistory` | P2 (derivable from verified block headers) |
-
-Gateway sends request to N providers; majority response wins. Dispute triggers re-execution by additional randomly-selected providers. Phase 2: EVM re-execution disputes with economic consequences.
-
-### Tier 3 — Non-deterministic methods
-
-`eth_estimateGas`, `eth_gasPrice`, `eth_maxPriorityFeePerGas` — implementation-specific. No deterministic disputes possible. Reputation scoring only: providers returning statistically anomalous results receive lower QoS scores and reduced traffic. No slashing.
+The chain allowlist is governance-controlled. The default minimum provision is **10,000 GRT** per chain, adjustable per chain by the contract owner.
 
 ---
 
-## 6. Payment model
+## 4. Provider lifecycle
 
-### 6.1 GraphTally integration
+```
+register
+  → startService(chainId, tier) × N
+    → serve requests + collect fees
+  → stopService(chainId, tier) × N
+→ deregister
+```
 
-GraphTally works as-is. The `data_service` field in TAP v2 receipts points to `RPCDataService` address, preventing cross-service replay.
+**Registration** establishes global identity. The provider supplies their endpoint URL, a geographic region (geohash), and optionally a `paymentsDestination` — a separate address to receive collected GRT. This decouples the operator signing key (used for attestations and on-chain transactions) from the payment wallet, allowing cold storage for GRT while a hot key handles operations.
 
-TAP receipt overhead must remain **<5ms** per request:
-- ECDSA signature verification: ~0.1ms
-- Receipt storage (async): ~0ms on critical path
-- Acceptable.
+**Service activation** (`startService`) records the `(chainId, tier)` pair on-chain and emits an event that the subgraph indexes. The contract checks that the provision meets the per-chain minimum at the moment of activation.
 
-### 6.2 CU-weighted pricing
+**Fee collection** (`collect`) accepts a signed RAV, delegates to `GraphTallyCollector` for EIP-712 signature and escrow verification, routes collected GRT to `paymentsDestination`, then locks `fees × 5` of the provider's stake for the thawing period (minimum 14 days). The **5:1 stake-to-fees ratio** means a provider must have five GRT at risk for every GRT they collect. This is the primary economic deterrent against fraud — a provider with 10,000 GRT can collect at most 2,000 GRT before their entire provision is tied up in stake claims.
 
-CU-weighted pricing is implemented. Compute unit weights:
+**Deregistration** requires all chain services to be stopped first, preventing a provider from escaping locked stake claims by deregistering during the dispute window.
 
-| Method category | CU weight |
+---
+
+## 5. Payment flow in practice
+
+```
+Consumer request
+    ↓
+dispatch-gateway
+    signs TAP receipt (EIP-712, random nonce, CU-weighted value)
+    selects provider via QoS scoring
+    ↓
+dispatch-service
+    validates TAP receipt (signature, sender authorisation, staleness)
+    forwards to Ethereum node
+    persists receipt to PostgreSQL
+    signs response attestation
+    ↓
+Periodically (every 60s):
+    dispatch-service → gateway /rav/aggregate → receives signed RAV
+Periodically (every hour):
+    dispatch-service → RPCDataService.collect() → GRT to provider
+```
+
+**Receipt validation** at the provider: the EIP-712 signature is recovered; the signer must be in the `authorized_senders` list (the gateway's operator key); the timestamp must be within the staleness window (default 30 seconds). An invalid receipt rejects the request — the provider works for free otherwise.
+
+**EIP-712 domain** for all TAP receipts and RAVs: name `"GraphTallyCollector"`, chain ID 42161 (Arbitrum One), verifying contract `0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e`. This domain must match exactly on both the gateway (signing) and provider (verifying) sides.
+
+**The consumer pays upfront.** GRT is deposited into `PaymentsEscrow` before requests are made. If escrow runs dry, RAV collection fails. This is an inherent bootstrapping consideration for new consumers.
+
+---
+
+## 6. Verification: the hard problem
+
+For subgraphs, correctness is checkable via Proof of Indexing — a deterministic hash of the indexed state. RPC has no equivalent. Most JSON-RPC methods are either:
+
+- **Non-deterministic** — gas estimates, mempool state, latest-block queries where two honest providers may honestly disagree
+- **State-dependent** — responses depend on chain head, which moves continuously
+- **Expensive to re-execute** — `eth_call` requires EVM re-execution; no efficient on-chain verifier exists
+
+Dispatch uses two complementary mechanisms that provide economic deterrence, not cryptographic guarantees:
+
+### 6.1 Attestations
+
+Every response from `dispatch-service` carries a signed header (`x-drpc-attestation`). The provider signs:
+
+```
+keccak256(
+    chain_id (8 bytes, big-endian)
+    || method (UTF-8 bytes)
+    || keccak256(params JSON)
+    || keccak256(result JSON)
+)
+```
+
+with its operator key. This creates a tamper-evident log: a consumer or gateway can prove that a provider *claimed* a specific response to a specific request.
+
+The gateway verifies every attestation before forwarding the response. Providers that forge, omit, or produce inconsistent attestations are penalised in QoS scoring and receive less traffic over time.
+
+**What this does not give you:** proof that the response was correct. Without a trusted state root and on-chain MPT verifier, an attestation cannot be used to slash a provider.
+
+### 6.2 Quorum
+
+For deterministic methods (`eth_call`, `eth_getLogs`, `eth_getBalance`, `eth_getCode`, `eth_getTransactionCount`, `eth_getStorageAt`, `eth_getBlockByHash`, `eth_getTransactionByHash`, `eth_getTransactionReceipt`), the gateway dispatches to multiple providers concurrently and takes the majority result. Minority responses trigger QoS penalties and a logged warning.
+
+Quorum makes systematic lying expensive: to consistently return a false result, an attacker must control a majority of the providers that the gateway selects for a given request. The default quorum size is 3.
+
+**What this does not give you:** certainty against a compromised gateway or a large-scale sybil attack on the provider pool.
+
+### 6.3 What is not implemented
+
+`slash()` on `RPCDataService` reverts unconditionally. The theoretically stronger model — EIP-1186 Merkle-Patricia Trie proof verification for a subset of methods — would enable on-chain fraud proofs, but requires:
+
+1. A trusted block header oracle posting state roots on-chain
+2. An on-chain MPT verifier (Solidity implementations exist)
+3. A challenger mechanism with slashing consequences
+
+The methods amenable to MPT proof verification are: `eth_getBalance`, `eth_getStorageAt`, `eth_getCode`, `eth_getTransactionCount` (from account trie), and `eth_getBlockByHash` (from header hash). This covers the highest-value read methods. `eth_call` requires EVM re-execution and remains out of reach for efficient on-chain verification.
+
+Dispatch is currently *economically secure* (lying costs stake and traffic) but not *cryptographically secure* (no on-chain verification of response correctness). This is the same position as Pocket Network and Lava Network today.
+
+---
+
+## 7. Gateway and network topology
+
+**Two consumer paths:**
+
+**Via dispatch-gateway** (managed path): The gateway owns the TAP signing key, selects providers, issues payments, and enforces quorum. The consumer trusts the gateway to route honestly and not collude with dishonest providers. This is the easy path — one HTTP endpoint, no configuration.
+
+**Via consumer-sdk** (trustless path): The SDK discovers providers from the subgraph, holds the consumer's own signing key, and issues TAP receipts directly. No third party can forge receipts on the consumer's behalf. Response verification is still attestation + quorum (same limitations), but the payment leg is fully decentralised.
+
+**Provider discovery:** `RPCDataService` emits events on registration, `startService`, and `stopService`. The RPC network subgraph indexes these. The gateway polls the subgraph every 60 seconds to rebuild its provider registry. Between polls, providers are probed with synthetic `eth_blockNumber` calls every 10 seconds for liveness and freshness tracking.
+
+**QoS scoring:** composite score per provider:
+- 35% latency (EMA of probe response times; 0ms = 1.0, 500ms = 0.0)
+- 35% availability (probe success rate over all history)
+- 30% freshness (exponential decay by blocks behind chain head)
+
+New providers start with an optimistic score of 1.0. A geographic bonus rewards same-region providers until latency data accumulates. Traffic is distributed via weighted-random selection among top-k candidates — not winner-take-all, so new providers can enter the routing pool.
+
+**Concurrent dispatch:** requests go to up to 3 providers simultaneously. The first valid response wins (for non-quorum methods). For quorum methods, all responses are compared. This costs 3× the GRT per request but reduces tail latency and adds a correctness check.
+
+---
+
+## 8. Pricing
+
+The gateway prices by compute unit (CU) weight multiplied by `base_price_per_cu`. The hardcoded default is `4_000_000_000_000` GRT wei per CU. Since GRT has 18 decimal places, this is **4×10⁻⁶ GRT per CU**.
+
+The TAP receipt `value` for a single request is `cu_weight × base_price_per_cu` GRT wei. Because the gateway dispatches to **3 providers concurrently** for all methods, the effective consumer cost is **3× the per-provider receipt** — all three receive and will eventually claim their receipts.
+
+**CU weights** (source: `dispatch-gateway/src/routes/rpc.rs`, `cu_weight_for`):
+
+| Method | CU |
 |---|---|
-| `eth_chainId`, `net_version`, `eth_blockNumber` | 1 |
-| `eth_getBalance`, `eth_getTransactionCount`, `eth_getCode`, `eth_getStorageAt` | 5 |
-| `eth_sendRawTransaction` | 5 |
-| `eth_getBlockByHash/Number` (header) | 5 |
+| `eth_chainId`, `eth_blockNumber`, `net_version` | 1 |
+| `eth_getBalance`, `eth_getCode`, `eth_getTransactionCount`, `eth_getStorageAt`, `eth_sendRawTransaction`, block queries | 5 |
 | `eth_call`, `eth_estimateGas`, `eth_getTransactionReceipt`, `eth_getTransactionByHash` | 10 |
-| `eth_getLogs` (bounded) | 20 |
-| `debug_traceTransaction` | 500+ |
+| `eth_getLogs` | 20 |
+| Unknown / unrecognised method | 10 |
 
-Target: $4–8/million CUs. Average mix (~10 CU/request) = $40–80/million requests.
+**Effective cost per million calls (×3 concurrent dispatch) vs Alchemy:**
 
-### 6.3 WebSocket subscriptions (Phase 3)
+| Method | CU | $0.05/GRT | $0.09/GRT | $0.15/GRT | Alchemy |
+|---|---|---|---|---|---|
+| `eth_blockNumber` | 1 | $0.60/M | $1.08/M | $1.80/M | $4.50/M |
+| `eth_getBalance` | 5 | $3.00/M | $5.40/M | $9.00/M | $4.50/M |
+| `eth_call` | 10 | $6.00/M | $10.80/M | $18.00/M | $11.70/M |
+| `eth_getLogs` | 20 | $12.00/M | $21.60/M | $36.00/M | $33.75/M |
 
-Each push event (`newHeads`, log notification) generates one receipt. Long-lived subscriptions: per-event pricing aligned with existing TAP model.
+At ~$0.09/GRT, Dispatch is cost-competitive with Alchemy: 8% cheaper on `eth_call`, 36% cheaper on `eth_getLogs`. Break-even on `eth_call` is at **~$0.10/GRT** — above that price, centralised providers become cheaper. These numbers are asserted in `dispatch-gateway/src/config.rs` (`pricing_math` test).
+
+CU weight is baked into the TAP receipt's `value` field. The provider receives payment per request regardless of outcome; the gateway adjusts how much it pays based on method cost.
+
+There is no GRT issuance for this data service. Revenue is query fees only.
 
 ---
 
-## 7. QoS framework
+## 9. Key design decisions
 
-### 7.1 Metrics
+**Single provision covers all chains.** One GRT provision backs all chains a provider serves. This minimises capital requirements but means chain-specific stake isolation is not possible. A provider being slashed (if slashing existed) for misbehaviour on one chain would have their entire multi-chain provision at risk.
 
-| Metric | Weight | Target |
+**TAP aggregation built into dispatch-service.** Rather than running a separate `indexer-tap-agent` binary, receipt aggregation and on-chain collection are embedded in `dispatch-service`. This simplifies deployment for solo operators. The tradeoff: it's non-standard relative to the broader Graph indexer ecosystem, and would need to be refactored for operators already running `indexer-tap-agent`.
+
+**paymentsDestination decoupling.** The payment recipient address is stored separately from the operator address on-chain. This allows cold-storage GRT wallets and separates operational key risk from fund custody.
+
+**Governance-controlled chain allowlist.** New chains require an owner transaction. This prevents griefing via bogus chain IDs and allows the operator to vet that backends actually exist. The alternative — permissionless chain addition with a bond requirement — is the natural next step.
+
+**Quorum methods are hard-coded.** The set of deterministic methods that trigger quorum dispatch is defined in the gateway binary, not in the contract or protocol. This means changing the quorum set requires a gateway update, not a governance action. Whether that's appropriate depends on how formal the protocol should be.
+
+---
+
+## 10. Known gaps
+
+| Gap | Why it exists | What would close it |
 |---|---|---|
-| Latency | 30% | p50 <50ms, p95 <200ms |
-| Availability | 30% | >99.9% rolling 24h |
-| Data freshness | 25% | Within 1 block of chain head |
-| Correctness | 15% | Spot-check pass rate |
-
-### 7.2 Provider selection
-
-Weighted random selection — higher QoS scores receive more traffic but not exclusively, enabling new provider discovery. Geographic routing sends requests to the closest provider.
-
-Probe system: gateway sends synthetic `eth_blockNumber` to all providers every 10 seconds.
-
-### 7.3 Failover
-
-Concurrent dispatch to up to 3 providers. First valid response wins. If primary exceeds latency threshold, retry with next-best provider.
+| No slashing | No on-chain truth for RPC responses | EIP-1186 MPT proofs + block header oracle |
+| No permissionless chain addition | Owner-only allowlist for operational safety | Bond-based permissionless addition |
+| No GRT issuance rewards | Not Graph-governance-approved | Graph governance proposal |
+| Gateway is a trust boundary | Architectural simplicity; SDK is the trustless alternative | TEE execution, P2P routing |
+| No consumer-side escrow visibility | Consumers can't easily see remaining escrow balance | Read-through to PaymentsEscrow |
+| Quorum set size is fixed at 3 | Hard-coded default; not chain/method-tunable | Configurable per method or tier |
+| No economic consequences for quorum minority | QoS penalty only; no stake-at-risk | Slashing infrastructure |
 
 ---
 
-## 8. Off-chain indexer stack
+## 11. Open questions
 
-### 8.1 dispatch-indexer-service (Rust)
-
-Fork of `indexer-service-rs`. Stateless, horizontally scalable.
-
-**Reused:**
-- TAP middleware (`tap-middleware` crate) — receipt validation is service-agnostic
-- Configuration framework
-- Metrics infrastructure
-
-**Replaced:**
-- GraphQL query handler → JSON-RPC proxy to Ethereum client
-- Agora cost model → CU-weighted per-method pricing
-- Subgraph routes → `/rpc/{chain_id}`, `/health`, `/chains`, `/version`
-- GraphQL attestation → RPC attestation (see below)
-
-**Request flow:**
-```
-Gateway → POST /rpc/{chain_id} + TAP-Receipt header
-  → TAP middleware: validate receipt signature, sender, value, timestamp
-  → Parse JSON-RPC method and params
-  → Forward to backend Ethereum client
-  → Sign response: keccak256(chainId || method || paramsHash || responseHash || blockHash)
-  → Return response + attestation
-```
-
-### 8.2 RPC attestation scheme
-
-```
-attestation = sign(keccak256(abi.encode(
-    chainId,
-    keccak256(bytes(method)),
-    keccak256(params),
-    keccak256(response),
-    blockNumber,
-    blockHash
-)))
-```
-
-Signed with indexer's operator key. Enables dispute submission for Tier 1 fraud proofs. Attached to every response as an HTTP header.
-
-### 8.3 indexer-tap-agent (Rust)
-
-Reused as-is. The agent is payment-protocol-generic. Adjustments:
-- Update `data_service` address to `RPCDataService`
-- Tune aggregation thresholds upward for RPC's higher request volume (10–100× subgraphs)
-
-### 8.4 indexer-agent (TypeScript)
-
-Adapted from `graphprotocol/indexer`. Replace subgraph allocation management with chain registration management:
-- Monitor which chains the provider's nodes support (sync state, peer count, disk space)
-- Call `RPCDataService.startService()` / `stopService()` accordingly
-- Manage RAV redemption scheduling
-
-### 8.5 Blockchain node infrastructure
-
-Providers run standard Ethereum clients (Geth, Erigon, Reth, Nethermind). Many Graph indexers already operate full/archive nodes — this is a natural extension.
+| Question | Notes |
+|---|---|
+| Is 10,000 GRT sufficient skin in the game? | At 5:1 ratio, a provider collects at most 2,000 GRT before full provision is locked. Adequate for Phase 1; may constrain high-volume providers. |
+| Can a gateway front-run providers economically? | The gateway selects which provider gets traffic. A compromised gateway can steer requests to a sybil, collect payments on behalf of that sybil, and split earnings. This is not a Dispatch-specific problem — it's inherent to any managed gateway. |
+| Should quorum size scale with chain head proximity? | For freshness-sensitive methods, a quorum of 3 providers all 5 blocks behind head may give worse results than a single up-to-date provider. |
+| What happens when a provider's escrow is exhausted mid-RAV-window? | The provider served requests but the RAV cannot be fully redeemed. Partial redemption is supported by TAP. |
+| How should per-chain minimum provisions scale with chain fee revenue? | High-fee chains (Ethereum mainnet) arguably warrant higher minimums. Currently uniform. |
 
 ---
 
-## 9. Gateway integration
-
-### 9.1 Discovery
-
-1. **On-chain**: `RPCDataService` emits `IndexerRegistered(address, chainId, tier, endpoint)` / `IndexerDeregistered` events
-2. **RPC network subgraph**: indexes these events into queryable schema
-3. **Gateway**: queries subgraph to build routing table; probes endpoints for liveness
-
-### 9.2 Request routing
-
-New routes in `edgeandnode/gateway`:
-- `POST /rpc/{chain_id}` — standard JSON-RPC
-- `POST /rpc/{chain_id}/ws` — WebSocket (Phase 3)
-
-Method classification on ingress:
-1. Parse `method` field from JSON-RPC request body
-2. Look up tier (1/2/3) and CU weight
-3. Compute cost; check against consumer budget
-4. Select provider via QoS-weighted random selection
-5. Attach TAP receipt (`data_service = RPCDataService address`)
-6. Dispatch; validate Merkle proof if Tier 1 (Phase 2)
-
-### 9.3 Receipt attachment
-
-TAP v2 receipt `metadata` field: `abi.encode(uint32 cuWeight, bytes4 methodSelector)` — enables per-method economic accounting.
-
----
-
-## 10. Integration testing strategy
-
-Learnt from SubstreamsDataService's test architecture: **mock `HorizonStaking` only; use production `GraphTallyCollector`, `PaymentsEscrow`, and `GraphPayments`.**
-
-Rationale: The EIP-712 signing, signer authorisation, cumulative RAV tracking, and token distribution logic live in those three contracts. Mocking them masks bugs that only surface against the real implementation — exactly the class of failure that kills an integration during testnet launch.
-
-Test environment:
-- Anvil local chain, deterministic accounts with fixed private keys
-- Deploy mock: `MockHorizonStaking`, `MockController` (stubs only)
-- Deploy production: `GraphTallyCollector`, `PaymentsEscrow`, `GraphPayments` from Horizon package
-- Deploy `RPCDataService` against above
-- Go/Rust integration tests validate EIP-712 hash compatibility across implementations
-
-Reference: `github.com/graphprotocol/substreams-data-service/test/integration/` — especially `rav_test.go` for Go↔Solidity hash/signature cross-validation and `substreams_flow_test.go` for end-to-end RAV flow.
-
----
-
-## 11. Deployed contract addresses
-
-### Arbitrum One (chain ID 42161) — all Horizon contracts
+## 12. Deployed addresses (Arbitrum One, chain ID 42161)
 
 | Contract | Address |
 |---|---|
 | HorizonStaking | `0x00669A4CF01450B64E8A2A20E9b1FCB71E61eF03` |
-| SubgraphService | `0xb2Bb92d0DE618878E438b55D5846cfecD9301105` |
-| GraphTallyCollector | `0x8f69F5C07477Ac46FBc491B1E6D91E2be0111A9e` |
-| PaymentsEscrow | `0x8f477709eF277d4A880801D01A140a9CF88bA0d3` |
-| DisputeManager | `0x0Ab2B043138352413Bb02e67E626a70320E3BD46` |
-| RewardsManager | `0x971B9d3d0Ae3ECa029CAB5eA1fB0F72c85e6a525` |
-| GRT Token | `0x9623063377AD1B27544C965cCd7342f7EA7e88C7` |
+| GraphPayments | `0xb98a3D452E43e40C70F3c0B03C5c7B56A8B3b8CA` |
+| PaymentsEscrow | `0xf6Fcc27aAf1fcD8B254498c9794451d82afC673E` |
+| GraphTallyCollector | `0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e` |
+| RPCDataService | `0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078` |
 
-Gateway sender: `0xDDE4cfFd3D9052A9cb618fC05a1Cd02be1f2F467`
-TAP aggregator: `https://tap-aggregator.network.thegraph.com`
-
-### Arbitrum Sepolia (chain ID 421614) — testnet
-
-| Contract | Address |
-|---|---|
-| HorizonStaking | `0x865365C425f3A593Ffe698D9c4E6707D14d51e08` |
-| SubgraphService | `0xc24A3dAC5d06d771f657A48B20cE1a671B78f26b` |
-| GraphTallyCollector | `0x382863e7B662027117449bd2c49285582bbBd21B` |
-| PaymentsEscrow | `0x1e4dC4f9F95E102635D8F7ED71c5CdbFa20e2d02` |
+Subgraph: `https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0`
 
 ---
 
-## 12. Open questions
+## 13. Competitive landscape
 
-| # | Question | Recommended position |
-|---|---|---|
-| Q1 | Chain ID type | `uint256` (EIP-155) with governance allowlist Phase 1, permissionless + bond Phase 2 |
-| Q2 | Minimum provision | 25,000 GRT per chain |
-| Q3 | Thawing period | 14 days |
-| Q4 | Gateway discovery | On-chain events + RPC network subgraph (mirrors SubgraphService pattern) |
-| Q5 | RAV aggregation | Shared TAP/GraphTally infrastructure — data_service field differentiates |
-| Q6 | stakeToFeesRatio | 5:1 (consistent with SubgraphService) |
-| Q7 | Per-method pricing | ✅ CU-weighted (1–20 CU per method; configurable `base_price_per_cu`) |
-| Q8 | eth_sendRawTransaction | Include at flat fee; no verification needed (self-authenticated) |
+| Protocol | Verification model | Token | Notes |
+|---|---|---|---|
+| Pocket Network | Proof-of-Relay + quorum | POKT | CU-based pricing; no Merkle proofs |
+| Lava Network | On-chain QoS scoring + cross-reference | LAVA | Spec-based chain definitions |
+| Infura DIN | Watcher nodes + EigenLayer stake | — | Progressively decentralising |
+| **Dispatch** | **Attestations + quorum** | **GRT** | **Horizon-native; shared stake with subgraphs** |
+
+The Graph's unique position: RPC providers, subgraph indexers, and Substreams operators can share the same GRT stake, network identity, and payment infrastructure. One stake, one payment system, one network.
 
 ---
 
-## 13. Source repositories
+## 14. Source references
 
 | Repo | Contents |
 |---|---|
-| `github.com/graphprotocol/contracts` | Horizon contracts (`packages/horizon/`), SubgraphService (`packages/subgraph-service/`) |
-| `github.com/graphprotocol/substreams-data-service` | Second Horizon data service (pre-launch); reference for `paymentsDestination` pattern, integration test strategy, provider gateway architecture |
-| `github.com/graphprotocol/indexer-rs` | `indexer-service-rs`, `indexer-tap-agent` — Rust workspace |
-| `github.com/graphprotocol/indexer` | `indexer-agent` — TypeScript |
-| `github.com/edgeandnode/gateway` | Production gateway — Rust, MIT |
-| `github.com/edgeandnode/tap-graph` | TAP Solidity types |
-
----
-
-## 14. Competitive landscape
-
-| Protocol | Verification | Token | Chains | Notes |
-|---|---|---|---|---|
-| Pocket Network | Proof-of-Relay + quorum | POKT | 50+ | CU-based pricing; mint-burn model |
-| Lava Network | On-chain QoS scoring + cross-ref | LAVA | 30+ | Spec-based chain definitions; chain-funded pools |
-| Infura DIN | Watcher nodes + stake-backed SLAs | — (EigenLayer) | 30+ | 13B+ req/month; progressive decentralisation |
-| Ankr | Internal QoS | ANKR | 80+ | 1T+ monthly requests; method-weighted pricing |
-| Dispatch.org | AI routing (no on-chain) | — | 90+ | No token; curated providers |
-| **This service** | **Merkle proofs (Tier 1) + quorum** | **GRT** | **10+ chains** | **Integrated with subgraphs, Substreams, Amp** |
-
-The Graph's competitive moat: RPC + indexed data (subgraphs) + streaming (Substreams) + SQL analytics (Amp) under one economic and security umbrella. One stake, one payment system, one network.
+| `github.com/graphprotocol/contracts` | Horizon contracts (`packages/horizon/`), SubgraphService |
+| `github.com/graphprotocol/substreams-data-service` | Second Horizon data service; reference for `paymentsDestination` pattern and integration test strategy |
+| `github.com/graphprotocol/indexer-rs` | `indexer-service-rs`, `indexer-tap-agent` |
+| `github.com/graphprotocol/indexer` | `indexer-agent` (TypeScript) |

@@ -25,7 +25,8 @@ eip712_domain_name = "GraphTallyCollector"
 # eip712_chain_id = 42161
 # eip712_verifying_contract = "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e"
 
-# GRT wei per compute unit (default ≈ $40/M requests at $0.09/GRT).
+# GRT wei per compute unit. Default = 4e-6 GRT/CU ($10.80/M eth_calls at $0.09/GRT, ×3 concurrent).
+# Break-even vs Alchemy on eth_call at ~$0.10/GRT. See config.rs pricing_math test for derivation.
 # base_price_per_cu = 4000000000000
 
 [qos]

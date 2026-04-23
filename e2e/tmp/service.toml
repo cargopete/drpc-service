@@ -13,6 +13,8 @@ eip712_domain_name = "GraphTallyCollector"
 eip712_chain_id = 31337
 eip712_verifying_contract = "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
 max_receipt_age_ns = 300000000000
+escrow_check_rpc_url = "http://127.0.0.1:8545"
+payments_escrow_address = "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
 
 [chains]
 supported = [31337]
