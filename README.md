@@ -34,7 +34,7 @@ The full payment loop is working end-to-end on the live provider. Requests gener
 dispatch-smoke
   endpoint   : https://rpc.cargopete.com
   chain_id   : 42161
-  data_svc   : 0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078
+  data_svc   : 0x7101d5c1a5c89c3647f5118da118e56c023ba0b9
   signer     : 0x7D14ae5f20cc2f6421317386Aa8E79e8728353d9
 
   [PASS] GET /health → 200 OK
@@ -218,9 +218,9 @@ All Horizon contracts live on **Arbitrum One** (chain ID 42161).
 | GraphPayments | `0xb98a3D452E43e40C70F3c0B03C5c7B56A8B3b8CA` |
 | PaymentsEscrow | `0xf6Fcc27aAf1fcD8B254498c9794451d82afC673E` |
 | GraphTallyCollector | `0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e` |
-| RPCDataService | `0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078` |
+| RPCDataService | `0x7101d5c1a5c89c3647f5118da118e56c023ba0b9` |
 
-Subgraph: `https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0`
+Subgraph: `https://api.studio.thegraph.com/query/1747796/rpc-network/v0.3.0`
 
 ---
 
@@ -353,9 +353,9 @@ import { DISPATCHClient } from "@lodestar-dispatch/consumer-sdk";
 
 const client = new DISPATCHClient({
   chainId: 42161,   // Arbitrum One — only live chain currently
-  dataServiceAddress: "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078",
+  dataServiceAddress: "0x7101d5c1a5c89c3647f5118da118e56c023ba0b9",
   graphTallyCollector: "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e",
-  subgraphUrl: "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0",
+  subgraphUrl: "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.3.0",
   signerPrivateKey: process.env.CONSUMER_KEY as `0x${string}`,
   basePricePerCU: 4_000_000_000_000n,
 });
@@ -374,7 +374,7 @@ import { IndexerAgent } from "@lodestar-dispatch/indexer-agent";
 
 const agent = new IndexerAgent({
   arbitrumRpcUrl: "https://arb1.arbitrum.io/rpc",
-  rpcDataServiceAddress: "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078",
+  rpcDataServiceAddress: "0x7101d5c1a5c89c3647f5118da118e56c023ba0b9",
   operatorPrivateKey: process.env.OPERATOR_KEY as `0x${string}`,
   providerAddress: "0x...",
   endpoint: "https://rpc.my-indexer.com",
@@ -405,7 +405,7 @@ service_provider_address = "0x..."
 operator_private_key      = "0x..."   # signs on-chain collect() transactions
 
 [tap]
-data_service_address      = "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078"
+data_service_address      = "0x7101d5c1a5c89c3647f5118da118e56c023ba0b9"
 authorized_senders        = ["0x..."]  # gateway signer address(es)
 eip712_domain_name        = "GraphTallyCollector"
 eip712_chain_id           = 42161
@@ -441,7 +441,7 @@ region = "eu-west"   # optional — used for geographic routing
 
 [tap]
 signer_private_key    = "0x..."
-data_service_address  = "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078"
+data_service_address  = "0x7101d5c1a5c89c3647f5118da118e56c023ba0b9"
 base_price_per_cu     = 4000000000000   # ≈ $40/M requests at $0.09 GRT
 eip712_domain_name    = "GraphTallyCollector"
 eip712_chain_id       = 42161
@@ -453,7 +453,7 @@ concurrent_k        = 3       # dispatch to top-3, first response wins
 region_bonus        = 0.15    # score boost for same-region providers
 
 [discovery]
-subgraph_url  = "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0"
+subgraph_url  = "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.3.0"
 interval_secs = 60
 
 [[providers]]

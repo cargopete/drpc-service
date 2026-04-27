@@ -1,6 +1,6 @@
 # Contract Reference
 
-`RPCDataService` is deployed on Arbitrum One at `0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078` as a **UUPS upgradeable proxy** (ERC1967). The proxy forwards all calls to an implementation contract; upgrades are owner-authorised via `upgradeToAndCall()`.
+`RPCDataService` is deployed on Arbitrum One at `0x7101d5c1a5c89c3647f5118da118e56c023ba0b9` as a **UUPS upgradeable proxy** (ERC1967). The proxy forwards all calls to an implementation contract; upgrades are owner-authorised via `upgradeToAndCall()`.
 
 It inherits Horizon's `DataService` + `DataServiceFees` + `DataServicePausableUpgradeable` and implements `IDataService`.
 

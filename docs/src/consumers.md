@@ -121,9 +121,9 @@ import { DISPATCHClient } from "@lodestar-dispatch/consumer-sdk";
 
 const client = new DISPATCHClient({
   chainId: 42161,                                               // Arbitrum One (only live chain)
-  dataServiceAddress: "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078",
+  dataServiceAddress: "0x7101d5c1a5c89c3647f5118da118e56c023ba0b9",
   graphTallyCollector: "0x8f69F5C07477Ac46FBc491B1E6D91E2bb0111A9e",
-  subgraphUrl: "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0",
+  subgraphUrl: "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.3.0",
   signerPrivateKey: process.env.CONSUMER_KEY as `0x${string}`,
   basePricePerCU: 4_000_000_000_000n,  // GRT wei per compute unit
 });
@@ -146,7 +146,7 @@ import {
 
 // Discover active providers for a chain + tier
 const providers = await discoverProviders(
-  "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.2.0",
+  "https://api.studio.thegraph.com/query/1747796/rpc-network/v0.3.0",
   42161,  // chainId
   0,      // tier: 0 = Standard, 1 = Archive
 );
@@ -155,7 +155,7 @@ const provider = selectProvider(providers);
 
 // Build and sign a receipt
 const receipt = buildReceipt(
-  "0xA983b18B8291F0c317Ba4Fe0dc0f7cc9373AF078",  // dataService
+  "0x7101d5c1a5c89c3647f5118da118e56c023ba0b9",  // dataService
   provider.address,                                // serviceProvider
   4_000_000_000_000n,                             // value (GRT wei)
 );
