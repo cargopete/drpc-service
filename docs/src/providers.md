@@ -8,7 +8,7 @@ This guide walks through everything needed to join the Dispatch network as a pro
 
 | Requirement | Details |
 |---|---|
-| **GRT** | ≥ 10,000 GRT on Arbitrum One for the provision |
+| **GRT** | ≥ 555 GRT on Arbitrum One for the provision |
 | **ETH on Arbitrum** | Small amount for gas (~0.005 ETH is plenty) |
 | **Ethereum node(s)** | Full or archive node for each chain you want to serve |
 | **Server** | Linux VPS with 2+ vCPUs, ≥ 4 GB RAM, SSD |
@@ -63,7 +63,7 @@ cast send 0x00669A4CF01450B64E8A2A20E9b1FCB71E61eF03 \
   --rpc-url https://arb1.arbitrum.io/rpc
 ```
 
-Replace `10000000000000000000000` with the amount in wei (1e18 per GRT). The minimum required by `RPCDataService` is **10,000 GRT** (`10000000000000000000000`).
+Replace the amount with your desired stake in wei (1e18 per GRT). The minimum required by `RPCDataService` is **555 GRT** (`555000000000000000000`).
 
 ### 2b. Create a provision
 
@@ -119,7 +119,7 @@ cast call 0x00669A4CF01450B64E8A2A20E9b1FCB71E61eF03 \
   --rpc-url https://arb1.arbitrum.io/rpc
 ```
 
-The first number is `tokens`. It should be ≥ `10000000000000000000000`.
+The first number is `tokens`. It should be ≥ `555000000000000000000` (555 GRT).
 
 ---
 
