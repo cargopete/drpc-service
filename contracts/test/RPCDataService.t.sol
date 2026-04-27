@@ -175,7 +175,7 @@ contract RPCDataServiceTest is Test {
 
     function test_register_revertIfInsufficientProvision() public {
         address poorProvider = makeAddr("poorProvider");
-        staking.setProvision(poorProvider, address(service), SUFFICIENT_PROVISION - 1, SUFFICIENT_THAWING);
+        staking.setProvision(poorProvider, address(service), service.DEFAULT_MIN_PROVISION() - 1, SUFFICIENT_THAWING);
 
         vm.prank(poorProvider);
         vm.expectRevert(); // ProvisionManagerInvalidValue("tokens", ...)

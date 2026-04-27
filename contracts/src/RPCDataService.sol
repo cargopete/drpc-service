@@ -38,7 +38,10 @@ contract RPCDataService is
     // -------------------------------------------------------------------------
 
     /// @notice Default minimum GRT provision per chain.
-    uint256 public constant DEFAULT_MIN_PROVISION = 10_000e18;
+    uint256 public constant DEFAULT_MIN_PROVISION = 555e18;
+
+    /// @notice Fraction of collected fees burned by the data service, in PPM (1% = 10_000).
+    uint256 public constant BURN_CUT_PPM = 10_000;
 
     /// @notice Absolute lower bound on the thawing period.
     uint64 public constant MIN_THAWING_PERIOD = 14 days;
@@ -285,15 +288,24 @@ contract RPCDataService is
         // Collect via GraphTallyCollector → PaymentsEscrow → GraphPayments.
         // The RAV's dataService field must equal address(this) — enforced by GraphTallyCollector.
         // Fees flow to paymentsDestination[serviceProvider], not necessarily serviceProvider itself.
+        // BURN_CUT_PPM of the collected amount is routed to this contract as the data service cut,
+        // then immediately burned below.
+        uint256 balanceBefore = _graphToken().balanceOf(address(this));
         fees = GRAPH_TALLY_COLLECTOR.collect(
             paymentType,
             abi.encode(
                 signedRav,
-                uint256(0), // dataServiceCut=0 (no curation)
+                BURN_CUT_PPM,
                 paymentsDestination[serviceProvider]
             ),
             tokensToCollect
         );
+
+        uint256 burned = _graphToken().balanceOf(address(this)) - balanceBefore;
+        if (burned > 0) {
+            _graphToken().burn(burned);
+            emit FeesBurned(serviceProvider, burned);
+        }
 
         if (fees > 0) {
             // Lock stake proportional to fees — released after the dispute window.
